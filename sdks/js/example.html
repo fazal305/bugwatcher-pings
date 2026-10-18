@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>BugWatcher JS SDK example</title>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+      button { font: inherit; padding: 0.5rem 1rem; margin: 0 0.5rem 0.5rem 0; }
+      code { background: #f1f1f1; padding: 0 0.25rem; }
+    </style>
+  </head>
+  <body>
+    <h1>BugWatcher JS SDK example</h1>
+    <p>Open this page as <code>example.html?key=bwp_pk_...&amp;endpoint=http://127.0.0.1:8473/api/v1/ping</code>, then use the buttons.</p>
+    <button id="throw" type="button">Throw an uncaught error</button>
+    <button id="reject" type="button">Reject a promise</button>
+    <button id="capture" type="button">Capture a handled error</button>
+    <p id="status" role="status"></p>
+
+    <script type="module">
+      import { init, captureException, setUser } from './bugwatcher.js';
+
+      const params = new URLSearchParams(location.search);
+      init({
+        key: params.get('key'),
+        endpoint: params.get('endpoint') || 'http://127.0.0.1:8473/api/v1/ping',
+        environment: 'development',
+        release: 'example-1.0.0',
+      });
+      setUser({ id: 'demo-user-1' });
+
+      const status = document.getElementById('status');
+      function checkout(cart) {
+        return cart.total.toFixed(2);
+      }
+
+      document.getElementById('throw').addEventListener('click', () => {
+        status.textContent = 'Threw an error; it was reported.';
+        checkout(undefined);
+      });
+      document.getElementById('reject').addEventListener('click', () => {
+        status.textContent = 'Rejected a promise; it was reported.';
+        Promise.reject(new RangeError('Quantity must be between 1 and 10'));
+      });
+      document.getElementById('capture').addEventListener('click', () => {
+        try {
+          JSON.parse('{broken');
+        } catch (error) {
+          captureException(error, { level: 'warning' });
+          status.textContent = 'Captured a handled error.';
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -2,9 +2,19 @@
 
 namespace App\Providers;
 
+use App\Pings\Masker;
+use App\Pings\PingRateLimiter;
+use App\Pings\PingSpool;
+use App\Pings\PingValidator;
+use App\Pings\ProjectKeyResolver;
 use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
+use Illuminate\Foundation\Http\Middleware\TrimStrings;
+use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -14,7 +24,23 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(ProjectKeyResolver::class, fn () => new ProjectKeyResolver(
+            Cache::store(config('pings.cache_store')),
+            config('pings.key_cache_ttl'),
+            config('pings.key_cache_negative_ttl'),
+        ));
+        $this->app->singleton(PingRateLimiter::class, fn () => new PingRateLimiter(
+            Cache::store(config('pings.cache_store')),
+            config('pings.rate_limit_per_key'),
+            config('pings.rate_limit_per_ip'),
+        ));
+        $this->app->singleton(PingValidator::class, fn () => new PingValidator(config('pings.max_frames'), config('pings.max_context_lines')));
+        $this->app->singleton(Masker::class, fn () => new Masker(config('pings.sensitive_keys')));
+        $this->app->singleton(PingSpool::class, fn () => new PingSpool(
+            Redis::connection(config('pings.redis_connection')),
+            config('pings.spool_key'),
+            config('pings.dead_letter_key'),
+        ));
     }
 
     /**
@@ -22,6 +48,13 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // The ingest route is called from any website and sets its own CORS headers; it also reads the raw body,
+        // so the global input-rewriting middleware would only cost time.
+        $isPing = fn (Request $request) => $request->is('api/v1/ping');
+        HandleCors::skipWhen($isPing);
+        TrimStrings::skipWhen($isPing);
+        ConvertEmptyStringsToNull::skipWhen($isPing);
+
         $tooMany = fn (Request $request, array $headers) => response()->json(
             ['message' => 'Too many attempts. Please wait a minute and try again.'],
             429,
@@ -42,6 +75,8 @@ class AppServiceProvider extends ServiceProvider
             Limit::perHour(20)->by('register-ip-hour:'.$request->ip())->response($tooMany),
             Limit::perMinute(3)->by('register-email:'.$email($request))->response($tooMany),
         ]);
+
+        RateLimiter::for('cron', fn (Request $request) => Limit::perMinute(10)->by('cron-ip:'.$request->ip())->response($tooMany));
 
         RateLimiter::for('demo', fn (Request $request) => [
             Limit::perMinute(5)->by('demo-ip:'.$request->ip())->response($tooMany),

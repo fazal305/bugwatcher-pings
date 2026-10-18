@@ -1,11 +1,22 @@
 <?php
 
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\CronController;
 use App\Http\Controllers\Api\MemberController;
+use App\Http\Controllers\Api\PingController;
 use App\Http\Controllers\Api\ProjectController;
+use App\Http\Middleware\PingCors;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', fn () => ['status' => 'ok']);
+
+// Error ingestion: unauthenticated apart from the project key, rate limited inside the controller.
+Route::match(['POST', 'OPTIONS'], '/v1/ping', PingController::class)
+    ->middleware(PingCors::class)
+    ->withoutMiddleware(SubstituteBindings::class);
+
+Route::post('/cron/run', CronController::class)->middleware('throttle:cron');
 
 Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:register');
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');

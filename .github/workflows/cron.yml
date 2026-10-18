@@ -1,0 +1,23 @@
+name: Scheduled maintenance
+
+# Hosts without cron (or that sleep when idle) get the spool drain and event pruning from here.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    if: vars.API_URL != ''
+    steps:
+      - name: Drain the spool and prune old events
+        env:
+          API_URL: ${{ vars.API_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 180 --retry 2 --retry-delay 30 \
+            -X POST -H "Authorization: Bearer $CRON_SECRET" -H "Accept: application/json" \
+            "$API_URL/api/cron/run"

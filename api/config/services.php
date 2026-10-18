@@ -35,6 +35,10 @@ return [
         ],
     ],
 
+    'cron' => [
+        'secret' => env('CRON_SECRET'),
+    ],
+
     'demo' => [
         'login_enabled' => (bool) env('DEMO_LOGIN_ENABLED', false),
     ],

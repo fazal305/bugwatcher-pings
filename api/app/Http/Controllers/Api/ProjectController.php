@@ -8,6 +8,7 @@ use App\Http\Requests\ProjectRequest;
 use App\Http\Resources\ProjectResource;
 use App\Http\Resources\ProjectSummaryResource;
 use App\Models\Project;
+use App\Pings\ProjectKeyResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
@@ -51,9 +52,11 @@ class ProjectController extends Controller
         return new ProjectResource($project);
     }
 
-    public function rotateKey(Project $project): ProjectResource
+    public function rotateKey(Project $project, ProjectKeyResolver $keys): ProjectResource
     {
+        $oldKey = $project->public_key;
         $project->forceFill(['public_key' => Project::newPublicKey()])->save();
+        $keys->forget($oldKey);
 
         return new ProjectResource($project);
     }
