@@ -13,11 +13,12 @@ Working so far:
 - Laravel API with JSON error responses (no stack traces when `APP_DEBUG=false`) and CORS limited to the web app's origin
 - Configuration for PostgreSQL, a Redis queue (through Predis), and broadcasting through Laravel Reverb locally or Pusher in production
 - Production Docker image for the API that runs migrations, switches on row level security, and runs a Redis queue worker and the web server
-- React dashboard: landing page, sign in and sign up, projects list, project settings and an empty live feed
+- React dashboard: landing page, sign in and sign up, projects list, project settings, a live error feed over WebSockets and an event detail page
+- Realtime: every processed event is broadcast to its project's private channel, authorized with a short-lived JWT; the dashboard backfills over REST after a reconnect
 - Error ingestion: `POST /api/v1/ping` masks secrets and queues each report on Redis without touching the database, background workers group reports into issues by fingerprint, and reports are kept in Redis while the database is down
 - JavaScript (browser) and PHP SDKs in [`sdks/`](sdks/README.md)
 
-Planned: the live feed over WebSockets, and Slack and Discord alerts.
+Planned: Slack and Discord alerts, and syntax highlighting on the event page.
 
 ## Accounts, projects and roles
 
@@ -39,7 +40,7 @@ Authorization is handled by `ProjectPolicy`, run as route middleware before vali
 
 Sign-in, sign-up and the demo are rate limited per IP address and (for sign-in and sign-up) per email address; over the limit the API answers `429` with a short message that the web app shows.
 
-Run `php artisan db:seed` to create the demo account ("Demo") and its project, "Demo Storefront (sample data)". The seeder is safe to run again. The demo account is shared by everyone who uses it, and the app says so while you're in it.
+Run `php artisan db:seed` to create the demo account ("Demo") and its project, "Demo Storefront (sample data)". The seeder is safe to run again. The demo account is shared by everyone who uses it, and the app says so while you're in it. Because of that it can't add, change or remove members or rotate keys (`403` with a short explanation), and the dashboard hides those controls for it.
 
 ## Error ingestion
 
@@ -109,7 +110,7 @@ Before anything reaches Redis, the API replaces with `[Filtered]` the value of e
 
 ### Processing, grouping and regressions
 
-Queue workers (`php artisan queue:work redis --queue=ingest,default`) store each report as a row in `events` and fold it into an `issues` row in one transaction. Reports with the same fingerprint share an issue. The fingerprint is a SHA-256 of the project, the exception type and the top in-app frame's file and function, without line numbers and with build hashes such as `index-3fa9c1d2.js` removed, so an error keeps its issue across deploys and when code above it moves. Without a usable frame the message is used instead, with numbers, hex values and UUIDs replaced. The issue's `event_count` and `last_seen_at` are updated with one atomic `UPDATE`; when a `resolved` issue gets a new event it is reopened and that event is flagged `is_regression`. A report delivered twice (same id) is stored once. After each commit the worker fires `App\Events\PingProcessed` with the event, the issue and the `isNewIssue` and `isRegression` flags; nothing listens to it yet.
+Queue workers (`php artisan queue:work redis --queue=ingest,default`) store each report as a row in `events` and fold it into an `issues` row in one transaction. Reports with the same fingerprint share an issue. The fingerprint is a SHA-256 of the project, the exception type and the top in-app frame's file and function, without line numbers and with build hashes such as `index-3fa9c1d2.js` removed, so an error keeps its issue across deploys and when code above it moves. Without a usable frame the message is used instead, with numbers, hex values and UUIDs replaced. The issue's `event_count` and `last_seen_at` are updated with one atomic `UPDATE`; when a `resolved` issue gets a new event it is reopened and that event is flagged `is_regression`. A report delivered twice (same id) is stored once. After each commit the worker fires `App\Events\PingProcessed` with the event, the issue and the `isNewIssue` and `isRegression` flags, which is broadcast to the dashboard (see [Realtime](#realtime)).
 
 | Table | Columns |
 |---|---|
@@ -122,6 +123,17 @@ Queue workers (`php artisan queue:work redis --queue=ingest,default`) store each
 - `php artisan pings:drain-spool` moves spooled reports back onto the queue once the database answers; the scheduler runs it every minute and the cron endpoint runs it too. A report that has been through the spool `PINGS_MAX_SPOOL_CYCLES` times (default 10) is moved to `bugwatcher:spool:dead` for inspection instead of looping forever.
 - The ingest route keeps answering 202 for keys it has seen recently: a cached key is reused for up to a day when the database can't be asked. Only a key that isn't cached at all gets 503.
 - Use Redis as the cache store (`CACHE_STORE=redis`): workers check the cache between jobs, so a database cache would stop them during an outage. Redis should keep its data (AOF or RDB persistence on the host), since the queue and the spool live there until the database is back.
+
+### Reading events and issues
+
+All of these need a signed-in member of the project (either role); anyone else gets `404 Not Found.`, and ids from another project answer `404` too.
+
+| Endpoint | What |
+|---|---|
+| `GET /api/projects/{slug}/events?before=<cursor>&limit=50` | Newest first. `limit` is 1 to 100; `level[]` and `environment[]` filter. The reply has `data` (the feed fields listed under Realtime) and `next_cursor` (`<received_at in ms>-<id>`, or `null` on the last page) |
+| `GET /api/projects/{slug}/events/{id}` | One event in full: stack frames with their context lines, the request and the user context, as masked at ingestion, plus its issue |
+| `GET /api/projects/{slug}/issues?status=open\|resolved&q=` | Issues by last seen, 50 a page; `q` searches titles, ignoring case |
+| `PATCH /api/projects/{slug}/issues/{id}` | `status`: `open` or `resolved` |
 
 ### Retention and the cron endpoint
 
@@ -153,6 +165,20 @@ What this shows:
 - Server time stays under 10 ms at the median up to 500/s, and rises above it once the CPUs are saturated.
 - Four workers store about 175 to 220 events a second for a single hot issue (each event holds that issue's row lock for one update and the commit). Above that, reports wait on the Redis queue, which is what the end-to-end column shows. For every step up to 1,000/s, all accepted pings were stored once the queue drained; the 2,000/s and 5,000/s backlogs were discarded unprocessed to save time. More workers, or reports spread over more issues, raise this.
 - Before the production image ran Octane (plain FrankenPHP, booting Laravel on every request) the same setup peaked at about 140 pings a second, with `ingest` p50 around 20 ms.
+
+## Realtime
+
+Each processed event is broadcast from the queue worker (`ShouldBroadcastNow`, since the worker is already off the request path) as `ping.processed` on the private channel `private-project.{slug}`. The payload is only what a feed card shows: `id`, `issue_id`, `issue_title`, `level`, `environment`, `critical` (a `fatal` or `error` in `production`), `message` (cut to 300 characters), `culprit`, `occurred_at` and `received_at` (ISO 8601 in UTC, to the millisecond), `is_new_issue`, `is_regression` and the issue's `event_count`. Request data, user context and stack frames are never broadcast. If the WebSocket server can't be reached the event is still stored and the failure is logged.
+
+Locally the WebSocket server is Laravel Reverb (`BROADCAST_CONNECTION=reverb`, `php artisan reverb:start`); in production it is Pusher Channels (`BROADCAST_CONNECTION=pusher`, always over TLS). The dashboard uses the same code for both through `laravel-echo` and `pusher-js`, picked by `VITE_BROADCAST_DRIVER`.
+
+Subscribing works like this:
+
+1. The dashboard calls `POST /api/realtime/token` with its Sanctum token and gets an HS256 JWT signed with `JWT_SECRET` that expires after 5 minutes. Its claims are `sub` (the user id), `aud` (`realtime`), `iat`, `exp` and `projects` (the slugs the user belonged to when it was issued).
+2. To join a channel the WebSocket client posts `socket_id` and `channel_name` to `POST /api/broadcasting/auth` with `Authorization: Bearer <JWT>`. Only the JWT is accepted there; a Sanctum token gets `401`, as does an expired, tampered or wrongly signed JWT, or one using any algorithm other than HS256. The slug must be in the token's `projects` claim and the user must still be a member in the database, otherwise `403`. The reply is the Pusher-protocol signature. The endpoint is limited to 60 requests a minute per IP.
+3. The dashboard renews the JWT a minute before it expires and after every dropped connection, so resubscribing never uses a stale token.
+
+The live feed (`/app/projects/{slug}/feed`) shows a Live, Reconnecting or Offline indicator. After a reconnect it fetches the events it missed over REST. New events go to the top straight away; if you have scrolled down, focused an older card or expanded one, the view stays where it is and a "N new events" button takes you to the top. The feed keeps at most 500 events in memory.
 
 ## Stack
 
@@ -231,7 +257,7 @@ API tests use an in-memory SQLite database by default. To run them against Postg
 | `PUSHER_APP_ID`, `PUSHER_APP_KEY`, `PUSHER_APP_SECRET`, `PUSHER_APP_CLUSTER` | Pusher Channels app, when `BROADCAST_CONNECTION=pusher` |
 | `FRONTEND_URL` | Origin(s) of the web app, comma-separated. Used for CORS |
 | `SANCTUM_EXPIRATION` | API token lifetime in minutes (default 7 days) |
-| `JWT_SECRET` | Reserved for signed tokens (not used yet) |
+| `JWT_SECRET` | Signs the realtime JWTs (HS256). At least 32 characters; keep it secret and different per environment |
 | `CRON_SECRET` | Bearer secret for `POST /api/cron/run`; empty turns the endpoint off |
 | `CACHE_STORE` | `redis`. Queue workers check the cache for restart signals, so a Redis cache keeps them running (and spooling) while the database is down |
 | `PINGS_CACHE_STORE` | Cache store for project key lookups and ingest rate limits (default `redis`) |
@@ -249,12 +275,12 @@ API tests use an in-memory SQLite database by default. To run them against Postg
 |---|---|
 | `VITE_API_URL` | Base URL of the API, including `/api` |
 | `VITE_BROADCAST_DRIVER` | `reverb` locally, `pusher` in production |
-| `VITE_REVERB_HOST`, `VITE_REVERB_PORT`, `VITE_REVERB_SCHEME` | Local Reverb server |
+| `VITE_REVERB_APP_KEY`, `VITE_REVERB_HOST`, `VITE_REVERB_PORT`, `VITE_REVERB_SCHEME` | Local Reverb server; the key is `REVERB_APP_KEY` from the API's `.env` |
 | `VITE_PUSHER_KEY`, `VITE_PUSHER_CLUSTER` | Pusher Channels app key and cluster (the key is public) |
 
 ## Deploying the API
 
-`api/Dockerfile` builds a production image (FrankenPHP, PHP 8.4, OPcache, `pdo_pgsql`, `pcntl`) that listens on `$PORT` (default 8080). It sets `APP_ENV=production`, `APP_DEBUG=false` and logs to stderr; it contains no secrets, so set `APP_KEY`, the `DB_*` and Redis variables, the `PUSHER_*` variables (with `BROADCAST_CONNECTION=pusher`) and `FRONTEND_URL` in the host's environment. On every start, `api/docker/start.sh` caches config, routes and views, runs `php artisan migrate --force`, switches on row level security (`php artisan db:enable-rls`, see below), starts `QUEUE_WORKERS` Redis queue workers and the scheduler in the background (each restarted if it exits) and then the web server: Laravel Octane on FrankenPHP in worker mode, which keeps the app booted between requests. Horizon and Reverb are not run in production.
+`api/Dockerfile` builds a production image (FrankenPHP, PHP 8.4, OPcache, `pdo_pgsql`, `pcntl`) that listens on `$PORT` (default 8080). It sets `APP_ENV=production`, `APP_DEBUG=false` and logs to stderr; it contains no secrets, so set `APP_KEY`, the `DB_*` and Redis variables, the `PUSHER_*` variables (with `BROADCAST_CONNECTION=pusher`), `JWT_SECRET` and `FRONTEND_URL` in the host's environment. On every start, `api/docker/start.sh` caches config, routes and views, runs `php artisan migrate --force`, switches on row level security (`php artisan db:enable-rls`, see below), starts `QUEUE_WORKERS` Redis queue workers and the scheduler in the background (each restarted if it exits) and then the web server: Laravel Octane on FrankenPHP in worker mode, which keeps the app booted between requests. Horizon and Reverb are not run in production.
 
 Render's free tier has no cron and sleeps when idle, so `.github/workflows/cron.yml` calls `POST /api/cron/run` every 15 minutes. Set the repository variable `API_URL` and the secret `CRON_SECRET` (the same value as the API's `CRON_SECRET`) to switch it on.
 

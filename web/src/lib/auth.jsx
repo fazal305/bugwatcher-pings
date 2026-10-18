@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { api, getToken, setToken } from './api'
+import { resetRealtime } from './realtime'
 
 const AuthContext = createContext(null)
 
@@ -28,6 +29,7 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     const onExpired = () => {
+      resetRealtime()
       setUser(null)
       setExpired(true)
       setStatus('guest')
@@ -49,6 +51,7 @@ export function AuthProvider({ children }) {
     } catch {
       // The token may already be invalid; signing out locally still applies.
     }
+    resetRealtime()
     setToken(null)
     setUser(null)
     setStatus('guest')

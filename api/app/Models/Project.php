@@ -52,6 +52,18 @@ class Project extends Model
         return $this->hasMany(ProjectMember::class);
     }
 
+    /** @return HasMany<ErrorEvent, $this> */
+    public function events(): HasMany
+    {
+        return $this->hasMany(ErrorEvent::class);
+    }
+
+    /** @return HasMany<Issue, $this> */
+    public function issues(): HasMany
+    {
+        return $this->hasMany(Issue::class);
+    }
+
     public function membershipFor(User $user): ?ProjectMember
     {
         return $this->members->firstWhere('user_id', $user->id);

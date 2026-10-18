@@ -1,12 +1,24 @@
-import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router'
+import { Link, Navigate, Outlet, useLocation } from 'react-router'
 import { LogoMark, Wordmark } from '../components/Logo'
 import { Button, ErrorState, OfflineBanner, Skeleton } from '../components/ui'
 import { useAuth } from '../lib/auth'
 
+const isFeedPath = (path) => path === '/app' || /^\/app\/projects\/[^/]+\/(feed|events)(\/|$)/.test(path)
+
 const NAV = [
-  { to: '/app', label: 'Live feed', end: true },
-  { to: '/app/projects', label: 'Projects' },
+  { to: '/app', label: 'Live feed', isActive: isFeedPath },
+  { to: '/app/projects', label: 'Projects', isActive: (path) => path.startsWith('/app/projects') && !isFeedPath(path) },
 ]
+
+function NavItem({ item, className }) {
+  const { pathname } = useLocation()
+  const active = item.isActive(pathname)
+  return (
+    <Link to={item.to} aria-current={active ? 'page' : undefined} className={className(active)}>
+      {item.label}
+    </Link>
+  )
+}
 
 export function RequireAuth({ children }) {
   const { status, retry } = useAuth()
@@ -53,16 +65,11 @@ export default function AppLayout() {
         </Link>
         <nav aria-label="Main" className="flex-1 space-y-1 px-3">
           {NAV.map((item) => (
-            <NavLink
+            <NavItem
               key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                `block rounded-lg px-3 py-2 text-sm font-medium ${isActive ? 'bg-accent-tint text-accent-strong' : 'text-muted hover:bg-sunken hover:text-ink'}`
-              }
-            >
-              {item.label}
-            </NavLink>
+              item={item}
+              className={(isActive) => `block rounded-lg px-3 py-2 text-sm font-medium ${isActive ? 'bg-accent-tint text-accent-strong' : 'text-muted hover:bg-sunken hover:text-ink'}`}
+            />
           ))}
         </nav>
         <div className="border-t border-line p-4">
@@ -82,14 +89,7 @@ export default function AppLayout() {
           </Link>
           <nav aria-label="Main" className="flex min-w-0 gap-1 text-sm font-medium">
             {NAV.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) => `whitespace-nowrap rounded-lg px-2.5 py-1.5 ${isActive ? 'bg-accent-tint text-accent-strong' : 'text-muted'}`}
-              >
-                {item.label}
-              </NavLink>
+              <NavItem key={item.to} item={item} className={(isActive) => `whitespace-nowrap rounded-lg px-2.5 py-1.5 ${isActive ? 'bg-accent-tint text-accent-strong' : 'text-muted'}`} />
             ))}
           </nav>
           <Button variant="ghost" className="ml-auto min-h-9 shrink-0 px-2.5" onClick={signOut}>

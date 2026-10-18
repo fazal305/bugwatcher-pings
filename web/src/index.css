@@ -95,7 +95,22 @@
   }
 }
 
+@keyframes feed-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.feed-enter {
+  animation: feed-enter 220ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .feed-enter {
+    animation: none;
+  }
+
   *,
   *::before,
   *::after {

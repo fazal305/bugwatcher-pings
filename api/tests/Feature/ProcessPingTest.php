@@ -25,20 +25,21 @@ class ProcessPingTest extends TestCase
 
     private Project $project;
 
-    private PingSpool $spool;
-
     protected function setUp(): void
     {
         parent::setUp();
         $this->project = Project::factory()->create();
-        $this->spool = app(PingSpool::class);
-        $this->spool->clear();
     }
 
-    protected function tearDown(): void
+    // Only the spool tests touch Redis; storing a ping doesn't.
+    private function spool(): PingSpool
     {
-        $this->spool->clear();
-        parent::tearDown();
+        $this->requireRedis();
+        $spool = app(PingSpool::class);
+        $spool->clear();
+        $this->beforeApplicationDestroyed(fn () => $spool->clear());
+
+        return $spool;
     }
 
     private function payload(array $overrides = [], ?array $frames = null): array
@@ -171,43 +172,46 @@ class ProcessPingTest extends TestCase
 
     public function test_when_the_database_is_down_the_payload_goes_to_the_spool(): void
     {
+        $spool = $this->spool();
         $down = new QueryException('pgsql', 'insert into "issues"', [], new PDOException('SQLSTATE[08006] [7] connection to server at "127.0.0.1", port 5432 failed: Connection refused'));
         $processor = Mockery::mock(PingProcessor::class);
         $processor->shouldReceive('process')->once()->andThrow($down);
         $payload = $this->payload();
 
-        (new ProcessPing($payload))->handle($processor, $this->spool);
+        (new ProcessPing($payload))->handle($processor, $spool);
 
-        $this->assertSame(1, $this->spool->size());
-        $this->assertSame($payload, json_decode($this->spool->pop(), true));
+        $this->assertSame(1, $spool->size());
+        $this->assertSame($payload, json_decode($spool->pop(), true));
     }
 
     public function test_other_errors_are_retried_and_a_job_that_fails_for_good_is_spooled(): void
     {
+        $spool = $this->spool();
         $processor = Mockery::mock(PingProcessor::class);
         $processor->shouldReceive('process')->andThrow(new RuntimeException('bug'));
         $job = new ProcessPing($this->payload());
 
         try {
-            $job->handle($processor, $this->spool);
+            $job->handle($processor, $spool);
             $this->fail('The exception should be rethrown so the queue retries the job.');
         } catch (RuntimeException) {
-            $this->assertSame(0, $this->spool->size());
+            $this->assertSame(0, $spool->size());
         }
 
         $job->failed(new RuntimeException('bug'));
 
-        $spooled = json_decode($this->spool->pop(), true);
+        $spooled = json_decode($spool->pop(), true);
         $this->assertSame(1, $spooled['spool_cycles']);
         $this->assertSame($job->payload['id'], $spooled['id']);
     }
 
     public function test_drain_spool_requeues_payloads_and_sets_aside_ones_that_keep_failing(): void
     {
+        $spool = $this->spool();
         Queue::fake();
-        $this->spool->push($this->payload());
-        $this->spool->push($this->payload());
-        $this->spool->push($this->payload(['spool_cycles' => 10]));
+        $spool->push($this->payload());
+        $spool->push($this->payload());
+        $spool->push($this->payload(['spool_cycles' => 10]));
 
         $this->artisan('pings:drain-spool')
             ->expectsOutput('Requeued 2 spooled ping(s); 1 set aside; 0 left.')
@@ -215,7 +219,7 @@ class ProcessPingTest extends TestCase
 
         Queue::assertPushed(ProcessPing::class, 2);
         Queue::assertPushedOn('ingest', ProcessPing::class);
-        $this->assertSame(0, $this->spool->size());
-        $this->assertSame(1, $this->spool->deadLetterSize());
+        $this->assertSame(0, $spool->size());
+        $this->assertSame(1, $spool->deadLetterSize());
     }
 }

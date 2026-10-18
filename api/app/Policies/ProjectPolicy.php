@@ -23,4 +23,15 @@ class ProjectPolicy
             null => Response::denyAsNotFound(),
         };
     }
+
+    // The demo account is shared by every visitor, so it must not be able to let anyone else in or lock others out.
+    public function manageAccess(User $user, Project $project): Response
+    {
+        $response = $this->manage($user, $project);
+        if ($response->allowed() && $user->isDemo()) {
+            return Response::deny("The shared demo account can't change members or rotate keys. Create your own account to try this.");
+        }
+
+        return $response;
+    }
 }

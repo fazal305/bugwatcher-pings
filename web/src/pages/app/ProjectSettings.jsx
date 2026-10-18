@@ -3,15 +3,18 @@ import { Link, useNavigate, useParams } from 'react-router'
 import { Alert, Button, Card, ErrorState, Field, Skeleton } from '../../components/ui'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { api, fieldErrors } from '../../lib/api'
+import { useAuth } from '../../lib/auth'
 
 const ROLES = [
   { value: 'admin', label: 'Admin' },
   { value: 'developer', label: 'Developer' },
 ]
 const ROLE_LABEL = { admin: 'Admin', developer: 'Developer' }
+const DEMO_NOTE = "The shared demo account can't change members or rotate keys. Create your own account to try this."
 
 export default function ProjectSettings() {
   const { slug } = useParams()
+  const { user } = useAuth()
   const [state, setState] = useState({ loading: true, error: null, project: null, members: [] })
   useDocumentTitle(state.project?.name || 'Project')
 
@@ -62,6 +65,8 @@ export default function ProjectSettings() {
 
   const { project, members } = state
   const isAdmin = project.role === 'admin'
+  // The server refuses these for the demo too; hiding them just avoids offering what can't work.
+  const canManageAccess = isAdmin && !user?.is_demo
 
   return (
     <>
@@ -71,11 +76,14 @@ export default function ProjectSettings() {
         <span className="rounded-full bg-sunken px-2.5 py-0.5 text-xs font-medium text-muted">You&apos;re {project.role === 'admin' ? 'an admin' : 'a developer'}</span>
       </div>
       <p className="mt-2 text-muted">Project settings, SDK key and team.</p>
+      <Link to={`/app/projects/${encodeURIComponent(project.slug)}/feed`} className="mt-2 inline-block text-sm font-semibold text-accent underline-offset-4 hover:underline">
+        Open the live feed →
+      </Link>
 
       <div className="mt-8 space-y-6">
-        <KeyCard path={path} project={project} isAdmin={isAdmin} onChange={setProject} />
+        <KeyCard path={path} project={project} canRotate={canManageAccess} demo={isAdmin && user?.is_demo} onChange={setProject} />
         {isAdmin && <RenameCard path={path} project={project} onChange={setProject} />}
-        <MembersCard path={path} isAdmin={isAdmin} members={members} onChange={setMembers} onReload={load} />
+        <MembersCard path={path} isAdmin={canManageAccess} demo={isAdmin && user?.is_demo} members={members} onChange={setMembers} onReload={load} />
       </div>
     </>
   )
@@ -89,7 +97,7 @@ function BackLink() {
   )
 }
 
-function KeyCard({ path, project, isAdmin, onChange }) {
+function KeyCard({ path, project, canRotate, demo, onChange }) {
   const [copyStatus, setCopyStatus] = useState('')
   const [confirming, setConfirming] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -155,7 +163,9 @@ function KeyCard({ path, project, isAdmin, onChange }) {
         </Alert>
       )}
 
-      {isAdmin &&
+      {demo && <p className="mt-3 text-sm text-muted">{DEMO_NOTE}</p>}
+
+      {canRotate &&
         (confirming ? (
           <div role="group" aria-labelledby="rotate-confirm" className="mt-3 rounded-lg border border-error/30 bg-error-tint p-4">
             <p id="rotate-confirm" className="text-sm text-error">
@@ -220,7 +230,7 @@ function RenameCard({ path, project, onChange }) {
   )
 }
 
-function MembersCard({ path, isAdmin, members, onChange, onReload }) {
+function MembersCard({ path, isAdmin, demo, members, onChange, onReload }) {
   const navigate = useNavigate()
   const [error, setError] = useState(null)
   const [busyId, setBusyId] = useState(null)
@@ -263,7 +273,13 @@ function MembersCard({ path, isAdmin, members, onChange, onReload }) {
   return (
     <Card
       title="Members"
-      description={isAdmin ? 'Admins can rename the project, rotate its key and manage members. Developers can view the project and its key.' : 'Only admins can change who belongs to this project.'}
+      description={
+        demo
+          ? DEMO_NOTE
+          : isAdmin
+            ? 'Admins can rename the project, rotate its key and manage members. Developers can view the project and its key.'
+            : 'Only admins can change who belongs to this project.'
+      }
     >
       {error && (
         <Alert tone="error" className="mt-4">

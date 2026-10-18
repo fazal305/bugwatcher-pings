@@ -7,6 +7,7 @@ use App\Pings\PingRateLimiter;
 use App\Pings\PingSpool;
 use App\Pings\PingValidator;
 use App\Pings\ProjectKeyResolver;
+use App\Realtime\Jwt;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
 use Illuminate\Foundation\Http\Middleware\TrimStrings;
@@ -41,6 +42,7 @@ class AppServiceProvider extends ServiceProvider
             config('pings.spool_key'),
             config('pings.dead_letter_key'),
         ));
+        $this->app->singleton(Jwt::class, fn () => new Jwt((string) config('services.realtime.jwt_secret')));
     }
 
     /**
@@ -75,6 +77,9 @@ class AppServiceProvider extends ServiceProvider
             Limit::perHour(20)->by('register-ip-hour:'.$request->ip())->response($tooMany),
             Limit::perMinute(3)->by('register-email:'.$email($request))->response($tooMany),
         ]);
+
+        // Generous enough for a dashboard resubscribing after reconnects, tight enough to blunt token guessing.
+        RateLimiter::for('realtime', fn (Request $request) => Limit::perMinute(60)->by('realtime-ip:'.$request->ip())->response($tooMany));
 
         RateLimiter::for('cron', fn (Request $request) => Limit::perMinute(10)->by('cron-ip:'.$request->ip())->response($tooMany));
 

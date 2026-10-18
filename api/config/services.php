@@ -39,6 +39,10 @@ return [
         'secret' => env('CRON_SECRET'),
     ],
 
+    'realtime' => [
+        'jwt_secret' => env('JWT_SECRET'),
+    ],
+
     'demo' => [
         'login_enabled' => (bool) env('DEMO_LOGIN_ENABLED', false),
     ],

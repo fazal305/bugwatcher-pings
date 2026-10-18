@@ -64,6 +64,7 @@ class PruneAndCronTest extends TestCase
 
     public function test_cron_endpoint_drains_the_spool_and_prunes(): void
     {
+        $this->requireRedis();
         config(['services.cron.secret' => 'right-secret']);
 
         $this->postJson('/api/cron/run', [], ['Authorization' => 'Bearer right-secret'])

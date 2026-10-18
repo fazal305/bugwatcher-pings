@@ -301,6 +301,7 @@ class PingIngestTest extends TestCase
 
     public function test_rate_limits_work_on_the_redis_store(): void
     {
+        $this->requireRedis();
         Queue::fake();
         $this->freezeTime();
         config(['pings.cache_store' => 'redis', 'pings.rate_limit_per_key' => 2, 'pings.rate_limit_per_ip' => 100]);

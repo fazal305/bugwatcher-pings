@@ -10,7 +10,9 @@ import NotFound from './pages/public/NotFound'
 import SignIn from './pages/public/SignIn'
 import SignUp from './pages/public/SignUp'
 import Terms from './pages/public/Terms'
+import EventDetail from './pages/app/EventDetail'
 import Feed from './pages/app/Feed'
+import FeedIndex from './pages/app/FeedIndex'
 import Projects from './pages/app/Projects'
 import NewProject from './pages/app/NewProject'
 import ProjectSettings from './pages/app/ProjectSettings'
@@ -41,10 +43,12 @@ const router = createBrowserRouter([
           </RequireAuth>
         ),
         children: [
-          { index: true, element: <Feed /> },
+          { index: true, element: <FeedIndex /> },
           { path: 'projects', element: <Projects /> },
           { path: 'projects/new', element: <NewProject /> },
           { path: 'projects/:slug', element: <ProjectSettings /> },
+          { path: 'projects/:slug/feed', element: <Feed /> },
+          { path: 'projects/:slug/events/:id', element: <EventDetail /> },
           { path: '*', element: <NotFound /> },
         ],
       },

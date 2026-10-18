@@ -41,8 +41,10 @@ return [
                 'scheme' => env('REVERB_SCHEME', 'https'),
                 'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
             ],
+            // Broadcasts are sent from queue workers; a slow WebSocket server must not hold a worker for long.
             'client_options' => [
-                // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
+                'connect_timeout' => 2,
+                'timeout' => 5,
             ],
         ],
 
@@ -59,8 +61,10 @@ return [
                 'encrypted' => true,
                 'useTLS' => env('PUSHER_SCHEME', 'https') === 'https',
             ],
+            // Broadcasts are sent from queue workers; a slow WebSocket server must not hold a worker for long.
             'client_options' => [
-                // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
+                'connect_timeout' => 2,
+                'timeout' => 5,
             ],
         ],
 

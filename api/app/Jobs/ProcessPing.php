@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Pings\PingProcessor;
 use App\Pings\PingSpool;
+use Illuminate\Broadcasting\BroadcastException;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\DetectsLostConnections;
 use Illuminate\Foundation\Queue\Queueable;
@@ -42,8 +43,16 @@ class ProcessPing implements ShouldQueue
             return;
         }
 
-        if ($processed !== null) {
+        if ($processed === null) {
+            return;
+        }
+
+        try {
             event($processed);
+        } catch (BroadcastException $e) {
+            // The ping is stored; a retry would find it already processed, and the dashboard backfills over REST when
+            // it reconnects, so a WebSocket outage is logged rather than failing the job.
+            Log::warning('Broadcasting a processed ping failed.', ['id' => $processed->event->id, 'error' => $e->getMessage()]);
         }
     }
 
