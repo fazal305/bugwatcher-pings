@@ -31,6 +31,8 @@ class EnableRowLevelSecurityTest extends TestCase
         );
 
         $this->assertNotEmpty($tables);
+        $this->assertContains('webhook_endpoints', array_column($tables, 'relname'));
+        $this->assertContains('webhook_deliveries', array_column($tables, 'relname'));
         foreach ($tables as $table) {
             $this->assertTrue($table->relrowsecurity, "{$table->relname} has RLS off");
             $this->assertSame(1, (int) $table->policies, "{$table->relname} should have exactly one deny policy");

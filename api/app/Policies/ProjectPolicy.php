@@ -34,4 +34,15 @@ class ProjectPolicy
 
         return $response;
     }
+
+    // Alerts send requests to any URL an admin enters, so the shared demo account must not be usable as a relay.
+    public function manageWebhooks(User $user, Project $project): Response
+    {
+        $response = $this->manage($user, $project);
+        if ($response->allowed() && $user->isDemo()) {
+            return Response::deny("The shared demo account can't add, change or test alerts. Create your own account to try this.");
+        }
+
+        return $response;
+    }
 }

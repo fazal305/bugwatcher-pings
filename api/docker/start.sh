@@ -10,10 +10,13 @@ php artisan view:cache
 php artisan migrate --force
 php artisan db:enable-rls
 
-# QUEUE_WORKERS (default 1) sets how many workers process pings in parallel.
+# QUEUE_WORKERS (default 1) sets how many workers process pings in parallel. They take webhook alerts first.
 for _ in $(seq "${QUEUE_WORKERS:-1}"); do
-    (while true; do php artisan queue:work redis --queue=ingest,default --sleep=0 --tries=3 --max-time=3600 || true; sleep 2; done) &
+    (while true; do php artisan queue:work redis --queue=webhooks,ingest,default --sleep=0 --tries=3 --max-time=3600 || true; sleep 2; done) &
 done
+# An idle worker only waits (BLPOP) on the first queue it lists, so the workers above would leave a lone ping
+# waiting up to REDIS_QUEUE_BLOCK_FOR seconds; this one waits on the ingest queue instead.
+(while true; do php artisan queue:work redis --queue=ingest,default --sleep=0 --tries=3 --max-time=3600 || true; sleep 2; done) &
 # Drains the spool every minute and prunes old events daily (see routes/console.php).
 (while true; do php artisan schedule:work || true; sleep 2; done) &
 

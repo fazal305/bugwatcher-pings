@@ -70,6 +70,6 @@ class PruneAndCronTest extends TestCase
         $this->postJson('/api/cron/run', [], ['Authorization' => 'Bearer right-secret'])
             ->assertOk()
             ->assertJsonPath('message', 'OK')
-            ->assertJsonPath('prune', 'Deleted 0 event(s) older than 30 day(s).');
+            ->assertJsonPath('prune', 'Deleted 0 event(s) older than 30 day(s).'.PHP_EOL.'Deleted 0 webhook delivery record(s) older than 30 day(s).');
     }
 }

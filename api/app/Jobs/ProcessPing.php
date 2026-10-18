@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Listeners\QueueWebhookAlerts;
 use App\Pings\PingProcessor;
 use App\Pings\PingSpool;
 use Illuminate\Broadcasting\BroadcastException;
@@ -53,6 +54,8 @@ class ProcessPing implements ShouldQueue
             // The ping is stored; a retry would find it already processed, and the dashboard backfills over REST when
             // it reconnects, so a WebSocket outage is logged rather than failing the job.
             Log::warning('Broadcasting a processed ping failed.', ['id' => $processed->event->id, 'error' => $e->getMessage()]);
+            // The dispatcher broadcasts before it calls listeners, so a failed broadcast skipped the alerts.
+            app(QueueWebhookAlerts::class)->handle($processed);
         }
     }
 

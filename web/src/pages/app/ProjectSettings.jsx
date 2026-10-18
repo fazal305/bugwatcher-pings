@@ -4,6 +4,7 @@ import { Alert, Button, Card, ErrorState, Field, Skeleton } from '../../componen
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 import { api, fieldErrors } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
+import AlertsCard from './AlertsCard'
 
 const ROLES = [
   { value: 'admin', label: 'Admin' },
@@ -75,7 +76,7 @@ export default function ProjectSettings() {
         <h1 className="min-w-0 text-3xl">{project.name}</h1>
         <span className="rounded-full bg-sunken px-2.5 py-0.5 text-xs font-medium text-muted">You&apos;re {project.role === 'admin' ? 'an admin' : 'a developer'}</span>
       </div>
-      <p className="mt-2 text-muted">Project settings, SDK key and team.</p>
+      <p className="mt-2 text-muted">Project settings, SDK key, team and alerts.</p>
       <Link to={`/app/projects/${encodeURIComponent(project.slug)}/feed`} className="mt-2 inline-block text-sm font-semibold text-accent underline-offset-4 hover:underline">
         Open the live feed →
       </Link>
@@ -84,6 +85,7 @@ export default function ProjectSettings() {
         <KeyCard path={path} project={project} canRotate={canManageAccess} demo={isAdmin && user?.is_demo} onChange={setProject} />
         {isAdmin && <RenameCard path={path} project={project} onChange={setProject} />}
         <MembersCard path={path} isAdmin={canManageAccess} demo={isAdmin && user?.is_demo} members={members} onChange={setMembers} onReload={load} />
+        <AlertsCard path={path} canManage={isAdmin && !user?.is_demo} demo={Boolean(user?.is_demo)} />
       </div>
     </>
   )

@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\MemberController;
 use App\Http\Controllers\Api\PingController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\RealtimeTokenController;
+use App\Http\Controllers\Api\WebhookController;
 use App\Http\Middleware\PingCors;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
@@ -52,5 +53,15 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::get('/events/{event}', [EventController::class, 'show'])->can('view', 'project')->where('event', '[0-9A-Za-z]{26}');
         Route::get('/issues', [IssueController::class, 'index'])->can('view', 'project');
         Route::patch('/issues/{issue}', [IssueController::class, 'update'])->can('view', 'project')->whereNumber('issue');
+
+        Route::get('/webhooks', [WebhookController::class, 'index'])->can('view', 'project');
+        Route::get('/webhooks/{webhook}/deliveries', [WebhookController::class, 'deliveries'])->can('view', 'project')->whereNumber('webhook');
+        Route::middleware('throttle:webhook-writes')->group(function () {
+            Route::post('/webhooks', [WebhookController::class, 'store'])->can('manageWebhooks', 'project');
+            Route::patch('/webhooks/{webhook}', [WebhookController::class, 'update'])->can('manageWebhooks', 'project')->whereNumber('webhook');
+            Route::delete('/webhooks/{webhook}', [WebhookController::class, 'destroy'])->can('manageWebhooks', 'project')->whereNumber('webhook');
+        });
+        Route::post('/webhooks/{webhook}/test', [WebhookController::class, 'test'])
+            ->can('manageWebhooks', 'project')->middleware('throttle:webhook-test')->whereNumber('webhook');
     });
 });

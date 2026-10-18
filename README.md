@@ -13,12 +13,11 @@ Working so far:
 - Laravel API with JSON error responses (no stack traces when `APP_DEBUG=false`) and CORS limited to the web app's origin
 - Configuration for PostgreSQL, a Redis queue (through Predis), and broadcasting through Laravel Reverb locally or Pusher in production
 - Production Docker image for the API that runs migrations, switches on row level security, and runs a Redis queue worker and the web server
-- React dashboard: landing page, sign in and sign up, projects list, project settings, a live error feed over WebSockets and an event detail page
+- React dashboard: landing page, sign in and sign up, projects list, project settings, a live error feed over WebSockets and an event detail page with the full stack trace and syntax-highlighted source
 - Realtime: every processed event is broadcast to its project's private channel, authorized with a short-lived JWT; the dashboard backfills over REST after a reconnect
 - Error ingestion: `POST /api/v1/ping` masks secrets and queues each report on Redis without touching the database, background workers group reports into issues by fingerprint, and reports are kept in Redis while the database is down
 - JavaScript (browser) and PHP SDKs in [`sdks/`](sdks/README.md)
-
-Planned: Slack and Discord alerts, and syntax highlighting on the event page.
+- Alerts: Slack, Discord and signed JSON webhooks per project, filtered by severity and environment, with a per-issue cooldown, a "Send test" button, a delivery log and server-side protection against requests to private networks (see [Alerts](#alerts))
 
 ## Accounts, projects and roles
 
@@ -110,7 +109,7 @@ Before anything reaches Redis, the API replaces with `[Filtered]` the value of e
 
 ### Processing, grouping and regressions
 
-Queue workers (`php artisan queue:work redis --queue=ingest,default`) store each report as a row in `events` and fold it into an `issues` row in one transaction. Reports with the same fingerprint share an issue. The fingerprint is a SHA-256 of the project, the exception type and the top in-app frame's file and function, without line numbers and with build hashes such as `index-3fa9c1d2.js` removed, so an error keeps its issue across deploys and when code above it moves. Without a usable frame the message is used instead, with numbers, hex values and UUIDs replaced. The issue's `event_count` and `last_seen_at` are updated with one atomic `UPDATE`; when a `resolved` issue gets a new event it is reopened and that event is flagged `is_regression`. A report delivered twice (same id) is stored once. After each commit the worker fires `App\Events\PingProcessed` with the event, the issue and the `isNewIssue` and `isRegression` flags, which is broadcast to the dashboard (see [Realtime](#realtime)).
+Queue workers (`php artisan queue:work redis --queue=webhooks,ingest,default`) store each report as a row in `events` and fold it into an `issues` row in one transaction. Reports with the same fingerprint share an issue. The fingerprint is a SHA-256 of the project, the exception type and the top in-app frame's file and function, without line numbers and with build hashes such as `index-3fa9c1d2.js` removed, so an error keeps its issue across deploys and when code above it moves. Without a usable frame the message is used instead, with numbers, hex values and UUIDs replaced. The issue's `event_count` and `last_seen_at` are updated with one atomic `UPDATE`; when a `resolved` issue gets a new event it is reopened and that event is flagged `is_regression`. A report delivered twice (same id) is stored once. After each commit the worker fires `App\Events\PingProcessed` with the event, the issue and the `isNewIssue` and `isRegression` flags, which is broadcast to the dashboard (see [Realtime](#realtime)) and starts any alerts (see [Alerts](#alerts)).
 
 | Table | Columns |
 |---|---|
@@ -131,13 +130,13 @@ All of these need a signed-in member of the project (either role); anyone else g
 | Endpoint | What |
 |---|---|
 | `GET /api/projects/{slug}/events?before=<cursor>&limit=50` | Newest first. `limit` is 1 to 100; `level[]` and `environment[]` filter. The reply has `data` (the feed fields listed under Realtime) and `next_cursor` (`<received_at in ms>-<id>`, or `null` on the last page) |
-| `GET /api/projects/{slug}/events/{id}` | One event in full: stack frames with their context lines, the request and the user context, as masked at ingestion, plus its issue |
+| `GET /api/projects/{slug}/events/{id}` | One event in full: stack frames with their context lines, the request and the user context, as masked at ingestion, plus its issue. The dashboard shows it at `/app/projects/{slug}/events/{id}` |
 | `GET /api/projects/{slug}/issues?status=open\|resolved&q=` | Issues by last seen, 50 a page; `q` searches titles, ignoring case |
 | `PATCH /api/projects/{slug}/issues/{id}` | `status`: `open` or `resolved` |
 
 ### Retention and the cron endpoint
 
-`php artisan pings:prune` deletes events older than `PINGS_RETENTION_DAYS` (default 30) in batches of 5,000; it runs daily. Issues are kept.
+`php artisan pings:prune` deletes events and webhook delivery records older than `PINGS_RETENTION_DAYS` (default 30) in batches of 5,000; it runs daily. Issues and webhook endpoints are kept.
 
 `POST /api/cron/run` runs `pings:drain-spool` and `pings:prune` for hosts without cron. It needs `Authorization: Bearer <CRON_SECRET>` (compared in constant time), answers 401 otherwise or when `CRON_SECRET` is empty, and is limited to 10 calls a minute per IP.
 
@@ -180,6 +179,121 @@ Subscribing works like this:
 
 The live feed (`/app/projects/{slug}/feed`) shows a Live, Reconnecting or Offline indicator. After a reconnect it fetches the events it missed over REST. New events go to the top straight away; if you have scrolled down, focused an older card or expanded one, the view stays where it is and a "N new events" button takes you to the top. The feed keeps at most 500 events in memory.
 
+## Event detail page
+
+`/app/projects/{slug}/events/{id}` shows the message, exception type, severity, environment, occurred, received and processed times to the millisecond, release, SDK, the issue (event count, first and last seen, and a Resolve or Reopen button that calls `PATCH /api/projects/{slug}/issues/{id}`), the request (method, URL, headers, query and body pretty-printed as JSON, with masked values shown as `[Filtered]`), the user context, and a "Copy as JSON" button for the whole event.
+
+The stack trace lists every frame, innermost first. Frames from your own code (`in_app: true`) start expanded and library frames collapsed (if no frame is marked, the thrown frame is expanded); each frame header is a button, and "Expand all" toggles them all. An expanded frame shows its source lines with line numbers, the thrown line marked with a red bar and tint. Code blocks scroll sideways inside the block, never the page.
+
+Source is highlighted with [highlight.js](https://highlightjs.org/) (core only, with the PHP, JavaScript and TypeScript grammars), loaded with a dynamic `import()` the first time a frame is shown, so it is a separate download of about 16 KB gzipped (core plus the three grammars) that no other page fetches. The language comes from the file extension (`.php`, `.js`/`.mjs`/`.cjs`/`.jsx`, `.ts`/`.tsx`); anything else is shown as plain text. highlight.js escapes the source before adding its `<span>`s, and the page only ever inserts its output; a context line containing `</code><img src=x onerror=alert(1)>` renders as text and creates no element (checked in the browser). The colours come from the design tokens in `web/src/index.css`; every token colour is at least 5.6:1 against the code background and the highlighted line in both themes:
+
+| Token | Light (on `#f2ede4` / thrown line `#fbe8e3`) | Dark (on `#110f0d` / thrown line `#3a1e17`) |
+|---|---|---|
+| Plain text | `#1c1a17` 14.89 / 14.68 | `#f1ece4` 16.27 / 12.96 |
+| Keyword, type | `#1d538c` 6.75 / 6.65 | `#90bcf2` 9.71 / 7.74 |
+| String | `#1f5f5b` 6.33 / 6.24 | `#6cc4bb` 9.34 / 7.44 |
+| Number, literal | `#835000` 5.79 / 5.70 | `#efc16c` 11.40 / 9.08 |
+| Comment, line numbers | `#5b554d` 6.32 / 6.23 | `#b4ab9e` 8.43 / 6.72 |
+| Function and class names | `#8c1c3a` 7.69 / 7.58 | `#ff94ad` 9.19 / 7.32 |
+| Variable, parameter | `#a8321c` 5.74 / 5.66 | `#ffa08a` 9.70 / 7.73 |
+| Attribute, property | `#164744` 8.92 / 8.79 | `#93d8d0` 11.82 / 9.41 |
+
+## Alerts
+
+Each project can send its errors to Slack (Incoming Webhooks), Discord (channel webhooks) or any HTTPS endpoint of your own (a signed JSON POST). Admins set them up under Project settings → Alerts.
+
+### How an alert is sent
+
+1. After a worker stores a ping and fires `PingProcessed`, the listener `App\Listeners\QueueWebhookAlerts` reads the project's enabled endpoints from the cache (Redis in production; the entry is cleared whenever an endpoint or the project changes, and holds no URLs or secrets).
+2. An endpoint matches when the event's level is at or above its `min_level` (`info` < `warning` < `error` < `fatal`) and its environment is one of the endpoint's `environments`.
+3. Repeats are limited per endpoint and issue with a Redis `SET … NX EX cooldown_seconds` (default 300; 0 turns it off). A repeat inside the window is recorded as `throttled` and not sent. A new issue or a regression is always sent and starts a new window.
+4. Each send is a `SendWebhook` job on the `webhooks` queue, which workers check before `ingest` and `default`. The job checks the URL again (see below), then POSTs with the Laravel HTTP client: 2 s to connect, 5 s in total, redirects not followed, up to 3 tries 250 ms and 1 s apart for connection errors, 5xx and 429 (other 4xx and 3xx replies are not retried). Retries happen inside the one job, so an endpoint never gets the same alert twice from a retried job.
+5. Every send is stored in `webhook_deliveries` with its result, the HTTP status, how long the request took and the dispatch delay: the time from `PingProcessed` being fired to the request starting. Only a generic error such as "The endpoint answered HTTP 404." is kept on the endpoint, never the response body.
+
+If broadcasting to the dashboard fails, the alerts are still queued. Nothing in the listener can fail the job that stored the ping.
+
+### What is sent
+
+Every alert links to the event: `FRONTEND_URL` (the first origin, if several) + `/app/projects/{slug}/events/{id}`.
+
+- **Slack**: Block Kit with a header (`[ERROR] TypeError: …`), the message, fields for culprit, environment, time to the millisecond (UTC), event count and project, a "New issue" or "Regression" note, and a "View in BugWatcher" button. `&`, `<` and `>` in error text are escaped, so a message containing `<!channel>` or `<https://…|text>` shows as typed instead of pinging a channel or making a link.
+- **Discord**: one embed whose title links to the event, coloured by severity, with the message as the description and the same fields. `allowed_mentions` is `{"parse": []}`, so `@everyone`, `@here`, role and user mentions in error text never notify anyone.
+- **Generic**: `{"type": "alert", "test": false, "project": {...}, "event": {"id", "level", "environment", "message", "exception_type", "culprit", "occurred_at", "url"}, "issue": {"id", "title", "event_count", "is_new", "is_regression"}}`, signed (below).
+
+Text is cut to each platform's limits (Slack: 150 characters for the header, 3,000 for the message, 2,000 per field; Discord: 256 for the title, 4,096 for the description, 1,024 per field and 6,000 for the whole embed). "Send test" sends a message labelled `[TEST]` (`"type": "test"` for generic endpoints) that links to the project settings.
+
+### Verifying a generic webhook
+
+Each request has `X-BugWatcher-Signature: t=<unix seconds>,v1=<hex>`, where `v1` is HMAC-SHA256 over `<t>.<raw request body>` with the endpoint's signing secret (`whsec_…`, shown once when the endpoint is created). Check it against the raw body before parsing it, and reject old timestamps to stop replays:
+
+```php
+$body = file_get_contents('php://input');
+parse_str(str_replace(',', '&', $_SERVER['HTTP_X_BUGWATCHER_SIGNATURE'] ?? ''), $sig);
+$expected = hash_hmac('sha256', ($sig['t'] ?? '').'.'.$body, getenv('BUGWATCHER_WEBHOOK_SECRET'));
+
+if (! isset($sig['t'], $sig['v1']) || ! hash_equals($expected, $sig['v1']) || abs(time() - (int) $sig['t']) > 300) {
+    http_response_code(401);
+    exit;
+}
+$alert = json_decode($body, true);
+```
+
+```js
+import { createHmac, timingSafeEqual } from 'node:crypto'
+
+function verify(rawBody, header, secret) {
+  const { t, v1 } = Object.fromEntries(header.split(',').map((part) => part.split('=')))
+  const expected = createHmac('sha256', secret).update(`${t}.${rawBody}`).digest('hex')
+  return Boolean(t && v1) && v1.length === expected.length
+    && timingSafeEqual(Buffer.from(v1), Buffer.from(expected)) && Math.abs(Date.now() / 1000 - Number(t)) <= 300
+}
+```
+
+### Which URLs are allowed
+
+A webhook URL makes the server send requests to wherever it points, so it is checked when an endpoint is created or changed (a `422` on `url` explains why) and again before every request:
+
+- `https://` only, port 443 only, and no username or password in the URL (also checked on the raw text, since URL parsers disagree about `@`). Backslashes, spaces and control characters are refused.
+- Slack: the host must be exactly `hooks.slack.com`. Discord: `discord.com` or `discordapp.com`, with a path starting `/api/webhooks/`.
+- Generic: the host is looked up (A and AAAA) and **every** address must be public. Refused ranges: `0.0.0.0/8`, `10/8`, `100.64/10`, `127/8`, `169.254/16` (including the `169.254.169.254` metadata address), `172.16/12`, `192.0.0/24`, `192.0.2/24`, `192.88.99/24`, `192.168/16`, `198.18/15`, `198.51.100/24`, `203.0.113/24`, `224/4`, `240/4`, and for IPv6 `::`, `::1`, `::ffff:0:0/96` (IPv4-mapped), `64:ff9b::/96`, `64:ff9b:1::/48`, `100::/64`, `2001::/23`, `2001:db8::/32`, `2002::/16`, `fc00::/7`, `fe80::/10`, `fec0::/10` and `ff00::/8`. A public IPv4 or bracketed IPv6 address may be used directly; numbers in disguise such as `2130706433`, `0x7f000001`, `017700000001`, `0177.0.0.1` or `127.1` are refused, as is any host whose last label isn't alphabetic.
+- The address that passed the check is pinned for the request with curl's `CURLOPT_RESOLVE`, so the name is not looked up a second time and a DNS answer that changes between the check and the request (DNS rebinding) can't point the request somewhere else. TLS still verifies the certificate for the host name. Redirects are never followed.
+
+For local testing only, `WEBHOOKS_ALLOW_PRIVATE=true` lets generic endpoints use private and loopback addresses, `http://` and any port (Slack and Discord rules are unchanged). It is ignored when `APP_ENV=production`, so a stray setting fails closed.
+
+### Endpoints
+
+All need a signed-in member of the project; others get `404`, and an endpoint id from another project answers `404` too. Developers can read (URLs masked); admins can change. The shared demo account can view alerts but can't add, change, delete or test them (`403` with a short explanation), so the public demo can't be used to send requests to arbitrary URLs. The dashboard hides those controls for developers and the demo; the server enforces it either way.
+
+| Endpoint | Who | What |
+|---|---|---|
+| `GET /api/projects/{slug}/webhooks` | members | Endpoints with `url_masked` (host + `/…` + the URL's last 4 characters), filters, `enabled`, `last_status`, `last_error`, `last_delivered_at`. The URL and secret are never returned |
+| `POST /api/projects/{slug}/webhooks` | admins | `kind` (`slack`, `discord` or `generic`), `name`, `url`, optional `min_level` (default `error`), `environments` (default `["production"]`), `cooldown_seconds` (0 to 86,400, default 300), `enabled`. For `generic`, the reply includes `signing_secret` this one time |
+| `PATCH /api/projects/{slug}/webhooks/{id}` | admins | Any of the fields above except `kind`; leave out `url` to keep the current one |
+| `DELETE /api/projects/{slug}/webhooks/{id}` | admins | |
+| `POST /api/projects/{slug}/webhooks/{id}/test` | admins | Sends a test message straight away (one try) and returns the delivery and a message. 5 a minute per user |
+| `GET /api/projects/{slug}/webhooks/{id}/deliveries` | members | The last 50 deliveries, newest first, with `status` (`success`, `failed` or `throttled`), `http_status`, `dispatch_delay_ms` and `duration_ms` |
+
+Creating, changing and deleting are limited to 20 a minute per user.
+
+| Table | Columns |
+|---|---|
+| `webhook_endpoints` | `project_id` (deleted with the project), `kind`, `name`, `url` and `signing_secret` (both encrypted with `APP_KEY` in `text` columns), `min_level`, `environments` (JSON), `cooldown_seconds`, `enabled`, `last_status`, `last_error`, `last_delivered_at` |
+| `webhook_deliveries` | `endpoint_id` (deleted with the endpoint), `event_id`, `issue_id` (`null` for tests), `status`, `http_status`, `dispatch_delay_ms`, `duration_ms`, `created_at` (indexed with `endpoint_id`) |
+
+Both tables are covered by `php artisan db:enable-rls`, like every other table.
+
+### Measured dispatch delay
+
+The target is to start the request within 50 ms of the ping being processed. Measured on 19 October 2026 on the laptop described under [Measured throughput and latency](#measured-throughput-and-latency), but running natively on Windows rather than in the production image: `php artisan serve`, Reverb and two `php artisan queue:work` workers (one `webhooks,ingest,default`, one `ingest,default`, as in `start.sh`) on Windows PHP 8.4, PostgreSQL and Redis from `docker-compose.yml`, and a generic endpoint pointing at a PHP receiver on the same machine (`WEBHOOKS_ALLOW_PRIVATE=true`). 20 pings were sent one a second, each matching the endpoint with the cooldown off. All 20 requests arrived with a valid signature and a deep link to their event.
+
+| Run | Dispatch delay p50 / p95 / max | Request duration p50 / p95 |
+|---|---|---|
+| First run, workers just started | 34 / 57.5 / 142 ms | 7 / 8.6 ms |
+| Second run, warm | 37 / 39.2 / 43 ms | 7 / 8.1 ms |
+| Warm, with broadcasting switched off | 30 / 38.5 / 104 ms (first job) | 7 / 14 ms |
+
+With warm workers every request started within 50 ms; the first job after a worker starts took 104 to 142 ms (connections and classes loading), which is what pushes the first run's p95 over the target. Broadcasting the event to Reverb accounts for only about 5 to 7 ms of the median; most of the rest is the queue hop (the job is pushed to Redis and picked up by a worker) plus loading the endpoint and building the payload, with every database and Redis round trip crossing from Windows into Docker's VM. This was 20 pings at a low rate, one endpoint, a receiver on the same machine, and a different setup from production; it says nothing about the delay under load, when workers are busy with a backlog of pings (webhook jobs go first, but a worker finishes the job it is on), and the clocks compared are on one machine. Slack's and Discord's own latency comes on top.
+
 ## Stack
 
 | Part | Technology |
@@ -215,7 +329,8 @@ php artisan serve --port=8473
 In separate terminals, as needed:
 
 ```bash
-php artisan queue:work redis --queue=ingest,default   # process pings and other jobs
+php artisan queue:work redis --queue=webhooks,ingest,default   # send alerts, process pings and other jobs
+php artisan queue:work redis --queue=ingest,default            # optional: picks up a ping at once while the worker above waits for alerts
 php artisan schedule:work                             # drains the spool every minute, prunes daily
 php artisan reverb:start                              # WebSocket server on port 8080
 ```
@@ -268,6 +383,8 @@ API tests use an in-memory SQLite database by default. To run them against Postg
 | `PINGS_MAX_SPOOL_CYCLES` | How many times a ping that keeps failing goes back through the spool before it is set aside (default 10) |
 | `QUEUE_WORKERS` | Docker image only: queue workers started next to the web server (default 1) |
 | `DEMO_LOGIN_ENABLED` | `true` turns on `POST /api/auth/demo` (default `false`). Needs the demo account from `php artisan db:seed` |
+| `WEBHOOKS_ALLOW_PRIVATE` | Local testing only: `true` lets generic webhooks reach private and loopback addresses over `http://` on any port (default `false`). Ignored when `APP_ENV=production` |
+| `REDIS_QUEUE_BLOCK_FOR` | Seconds an idle worker waits on its first queue before checking the others (default 5) |
 
 ### `web/.env.local`
 
@@ -280,7 +397,7 @@ API tests use an in-memory SQLite database by default. To run them against Postg
 
 ## Deploying the API
 
-`api/Dockerfile` builds a production image (FrankenPHP, PHP 8.4, OPcache, `pdo_pgsql`, `pcntl`) that listens on `$PORT` (default 8080). It sets `APP_ENV=production`, `APP_DEBUG=false` and logs to stderr; it contains no secrets, so set `APP_KEY`, the `DB_*` and Redis variables, the `PUSHER_*` variables (with `BROADCAST_CONNECTION=pusher`), `JWT_SECRET` and `FRONTEND_URL` in the host's environment. On every start, `api/docker/start.sh` caches config, routes and views, runs `php artisan migrate --force`, switches on row level security (`php artisan db:enable-rls`, see below), starts `QUEUE_WORKERS` Redis queue workers and the scheduler in the background (each restarted if it exits) and then the web server: Laravel Octane on FrankenPHP in worker mode, which keeps the app booted between requests. Horizon and Reverb are not run in production.
+`api/Dockerfile` builds a production image (FrankenPHP, PHP 8.4, OPcache, `pdo_pgsql`, `pcntl`) that listens on `$PORT` (default 8080). It sets `APP_ENV=production`, `APP_DEBUG=false` and logs to stderr; it contains no secrets, so set `APP_KEY`, the `DB_*` and Redis variables, the `PUSHER_*` variables (with `BROADCAST_CONNECTION=pusher`), `JWT_SECRET` and `FRONTEND_URL` in the host's environment. On every start, `api/docker/start.sh` caches config, routes and views, runs `php artisan migrate --force`, switches on row level security (`php artisan db:enable-rls`, see below), starts `QUEUE_WORKERS` Redis queue workers (queues `webhooks,ingest,default`) plus one more on `ingest,default`, and the scheduler, in the background (each restarted if it exits) and then the web server: Laravel Octane on FrankenPHP in worker mode, which keeps the app booted between requests. Horizon and Reverb are not run in production.
 
 Render's free tier has no cron and sleeps when idle, so `.github/workflows/cron.yml` calls `POST /api/cron/run` every 15 minutes. Set the repository variable `API_URL` and the secret `CRON_SECRET` (the same value as the API's `CRON_SECRET`) to switch it on.
 

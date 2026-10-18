@@ -18,12 +18,17 @@ class PingProcessed implements ShouldBroadcastNow
 {
     use Dispatchable;
 
+    // When the ping finished processing (microtime): where the webhook dispatch delay is measured from.
+    public readonly float $firedAt;
+
     public function __construct(
         public ErrorEvent $event,
         public Issue $issue,
         public bool $isNewIssue,
         public bool $isRegression,
-    ) {}
+    ) {
+        $this->firedAt = microtime(true);
+    }
 
     public function broadcastOn(): PrivateChannel
     {

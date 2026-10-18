@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\ProjectRole;
+use App\Webhooks\EndpointCache;
 use Database\Factories\ProjectFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -22,6 +23,8 @@ class Project extends Model
             $project->slug ??= static::uniqueSlug($project->name);
             $project->public_key ??= static::newPublicKey();
         });
+        // Alerts carry the project's name, which the webhook endpoint cache holds.
+        static::updated(fn (Project $project) => app(EndpointCache::class)->forget($project->id));
     }
 
     public static function newPublicKey(): string
@@ -62,6 +65,12 @@ class Project extends Model
     public function issues(): HasMany
     {
         return $this->hasMany(Issue::class);
+    }
+
+    /** @return HasMany<WebhookEndpoint, $this> */
+    public function webhooks(): HasMany
+    {
+        return $this->hasMany(WebhookEndpoint::class);
     }
 
     public function membershipFor(User $user): ?ProjectMember

@@ -31,6 +31,7 @@
         <env name="PINGS_CACHE_STORE" value="array"/>
         <env name="REDIS_PREFIX" value="bugwatcher-pings-test-"/>
         <env name="SESSION_DRIVER" value="array"/>
+        <env name="WEBHOOKS_ALLOW_PRIVATE" value="false"/>
         <env name="JWT_SECRET" value="test-only-jwt-secret-0123456789abcdef"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>

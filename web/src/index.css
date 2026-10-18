@@ -35,6 +35,17 @@
   --color-info: #1d538c;
   --color-info-tint: #e4edf7;
 
+  /* Code view: every syntax colour is at least 5.6:1 on --color-code and on --color-code-current in both themes. */
+  --color-code: #f2ede4;
+  --color-code-current: #fbe8e3;
+  --color-syntax-keyword: #1d538c;
+  --color-syntax-string: #1f5f5b;
+  --color-syntax-number: #835000;
+  --color-syntax-comment: #5b554d;
+  --color-syntax-title: #8c1c3a;
+  --color-syntax-variable: #a8321c;
+  --color-syntax-attr: #164744;
+
   --radius-card: 0.75rem;
 }
 
@@ -61,6 +72,16 @@
     --color-warning-tint: #352910;
     --color-info: #90bcf2;
     --color-info-tint: #182739;
+
+    --color-code: #110f0d;
+    --color-code-current: #3a1e17;
+    --color-syntax-keyword: #90bcf2;
+    --color-syntax-string: #6cc4bb;
+    --color-syntax-number: #efc16c;
+    --color-syntax-comment: #b4ab9e;
+    --color-syntax-title: #ff94ad;
+    --color-syntax-variable: #ffa08a;
+    --color-syntax-attr: #93d8d0;
   }
 }
 
@@ -93,6 +114,48 @@
   ::selection {
     background: var(--color-accent-tint);
   }
+}
+
+/* highlight.js token classes, mapped onto the design tokens above. */
+.hljs-keyword,
+.hljs-built_in,
+.hljs-type,
+.hljs-selector-tag,
+.hljs-doctag {
+  color: var(--color-syntax-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-template-tag,
+.hljs-template-variable,
+.hljs-subst {
+  color: var(--color-syntax-string);
+}
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet {
+  color: var(--color-syntax-number);
+}
+.hljs-comment,
+.hljs-quote,
+.hljs-meta {
+  color: var(--color-syntax-comment);
+  font-style: italic;
+}
+.hljs-title,
+.hljs-section,
+.hljs-name {
+  color: var(--color-syntax-title);
+}
+.hljs-variable,
+.hljs-params {
+  color: var(--color-syntax-variable);
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-property {
+  color: var(--color-syntax-attr);
 }
 
 @keyframes feed-enter {

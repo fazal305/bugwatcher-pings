@@ -8,6 +8,10 @@ use App\Pings\PingSpool;
 use App\Pings\PingValidator;
 use App\Pings\ProjectKeyResolver;
 use App\Realtime\Jwt;
+use App\Webhooks\Cooldown;
+use App\Webhooks\EndpointCache;
+use App\Webhooks\HostResolver;
+use App\Webhooks\UrlGuard;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Http\Middleware\ConvertEmptyStringsToNull;
 use Illuminate\Foundation\Http\Middleware\TrimStrings;
@@ -43,6 +47,19 @@ class AppServiceProvider extends ServiceProvider
             config('pings.dead_letter_key'),
         ));
         $this->app->singleton(Jwt::class, fn () => new Jwt((string) config('services.realtime.jwt_secret')));
+        $this->app->singleton(EndpointCache::class, fn () => new EndpointCache(
+            Cache::store(config('pings.cache_store')),
+            config('webhooks.endpoint_cache_ttl'),
+        ));
+        $this->app->singleton(Cooldown::class, fn () => new Cooldown(
+            fn () => Redis::connection(config('pings.redis_connection')),
+            config('webhooks.cooldown_key_prefix'),
+        ));
+        // The private-address override is for local testing only; production ignores it, so a stray setting fails closed.
+        $this->app->bind(UrlGuard::class, fn ($app) => new UrlGuard(
+            $app->make(HostResolver::class),
+            config('webhooks.allow_private') && ! $app->environment('production'),
+        ));
     }
 
     /**
@@ -82,6 +99,12 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('realtime', fn (Request $request) => Limit::perMinute(60)->by('realtime-ip:'.$request->ip())->response($tooMany));
 
         RateLimiter::for('cron', fn (Request $request) => Limit::perMinute(10)->by('cron-ip:'.$request->ip())->response($tooMany));
+
+        RateLimiter::for('webhook-writes', fn (Request $request) => Limit::perMinute(config('webhooks.write_rate_limit_per_minute'))
+            ->by('webhook-writes:'.($request->user()?->id ?: $request->ip()))->response($tooMany));
+
+        RateLimiter::for('webhook-test', fn (Request $request) => Limit::perMinute(config('webhooks.test_rate_limit_per_minute'))
+            ->by('webhook-test:'.($request->user()?->id ?: $request->ip()))->response($tooMany));
 
         RateLimiter::for('demo', fn (Request $request) => [
             Limit::perMinute(5)->by('demo-ip:'.$request->ip())->response($tooMany),
