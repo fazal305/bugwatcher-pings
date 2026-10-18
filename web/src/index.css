@@ -1,0 +1,105 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/bricolage-grotesque';
+@import '@fontsource-variable/public-sans';
+@import '@fontsource-variable/jetbrains-mono';
+
+/*
+ * Every text/background pair used below meets WCAG AA (4.5:1) in both themes:
+ * ink and muted on paper/surface/sunken, accent on paper/surface, on-accent on accent,
+ * and each severity colour on its own tint and on paper/surface.
+ */
+@theme {
+  --font-display: 'Bricolage Grotesque Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-sans: 'Public Sans Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  --color-paper: #faf7f2;
+  --color-surface: #ffffff;
+  --color-sunken: #f2ede4;
+  --color-ink: #1c1a17;
+  --color-muted: #5b554d;
+  --color-line: #e5dfd4;
+  --color-line-strong: #cdc5b6;
+
+  --color-accent: #1f5f5b;
+  --color-accent-strong: #164744;
+  --color-accent-tint: #e2efed;
+  --color-on-accent: #ffffff;
+
+  --color-fatal: #8c1c3a;
+  --color-fatal-tint: #f8e4e9;
+  --color-error: #a8321c;
+  --color-error-tint: #fbe8e3;
+  --color-warning: #835000;
+  --color-warning-tint: #fbefd6;
+  --color-info: #1d538c;
+  --color-info-tint: #e4edf7;
+
+  --radius-card: 0.75rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-paper: #171513;
+    --color-surface: #211e1b;
+    --color-sunken: #110f0d;
+    --color-ink: #f1ece4;
+    --color-muted: #b4ab9e;
+    --color-line: #34302b;
+    --color-line-strong: #4b463f;
+
+    --color-accent: #6cc4bb;
+    --color-accent-strong: #93d8d0;
+    --color-accent-tint: #1c3432;
+    --color-on-accent: #171513;
+
+    --color-fatal: #ff94ad;
+    --color-fatal-tint: #3b1821;
+    --color-error: #ffa08a;
+    --color-error-tint: #3a1e17;
+    --color-warning: #efc16c;
+    --color-warning-tint: #352910;
+    --color-info: #90bcf2;
+    --color-info-tint: #182739;
+  }
+}
+
+@layer base {
+  html {
+    color-scheme: light dark;
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    min-height: 100dvh;
+    background: var(--color-paper);
+    overflow-wrap: break-word;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  ::selection {
+    background: var(--color-accent-tint);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

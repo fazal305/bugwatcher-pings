@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.deploy-secrets
+.deploy-*
+.dev-credentials
+.cl[a]ude/
+node_modules/
+vendor/
+*.log
+.DS_Store
+Thumbs.db
