@@ -8,6 +8,7 @@ php artisan config:cache
 php artisan route:cache
 php artisan view:cache
 php artisan migrate --force
+php artisan db:enable-rls
 
 (while true; do php artisan queue:work redis --sleep=0 --tries=3 --max-time=3600 || true; sleep 2; done) &
 

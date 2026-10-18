@@ -1,4 +1,5 @@
-import { Link } from 'react-router'
+import { DemoButton } from '../../components/DemoButton'
+import { LinkButton } from '../../components/ui'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
 
 const STEPS = [
@@ -16,10 +17,11 @@ export default function Landing() {
       <p className="mt-5 max-w-2xl text-lg text-muted">
         Error reports from your apps, grouped into issues and shown in a live feed, with a ping to your team in Slack or Discord when something breaks.
       </p>
-      <div className="mt-8">
-        <Link to="/app" className="inline-flex min-h-11 items-center rounded-lg bg-accent px-5 font-semibold text-on-accent hover:bg-accent-strong">
-          Open the dashboard
-        </Link>
+      <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-start">
+        <LinkButton to="/signup" className="px-5">
+          Create an account
+        </LinkButton>
+        <DemoButton />
       </div>
 
       <section aria-labelledby="how" className="mt-20">
