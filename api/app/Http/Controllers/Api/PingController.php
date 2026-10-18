@@ -3,16 +3,14 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
-use App\Jobs\ProcessPing;
 use App\Pings\DatabaseUnavailable;
-use App\Pings\Masker;
+use App\Pings\PingQueue;
 use App\Pings\PingRateLimiter;
 use App\Pings\PingValidator;
 use App\Pings\ProjectKeyResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 /**
  * The ingest hot path: no session, no auth guard and, once the project key is cached, no database query. Everything
@@ -25,7 +23,7 @@ class PingController extends Controller
         ProjectKeyResolver $keys,
         PingRateLimiter $limiter,
         PingValidator $validator,
-        Masker $masker,
+        PingQueue $queue,
     ): JsonResponse {
         $started = hrtime(true);
         $maxBytes = (int) config('pings.max_body_bytes');
@@ -63,20 +61,7 @@ class PingController extends Controller
             return $this->respond(['message' => 'The ping is invalid.', 'errors' => $errors], 422, $started);
         }
 
-        $ping = $masker->mask($ping);
-        if (isset($ping['request']['url'])) {
-            $ping['request']['url'] = $masker->maskUrl($ping['request']['url']);
-        }
-        if (isset($ping['request']['query']) && is_string($ping['request']['query'])) {
-            $ping['request']['query'] = $masker->maskQueryString(ltrim($ping['request']['query'], '?'));
-        }
-
-        $id = (string) Str::ulid();
-        ProcessPing::dispatch($ping + [
-            'id' => $id,
-            'project_id' => $projectId,
-            'received_at' => (int) floor(microtime(true) * 1000),
-        ])->onQueue(config('pings.queue'));
+        $id = $queue->push($ping, $projectId);
 
         return $this->respond(['id' => $id], 202, $started);
     }

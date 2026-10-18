@@ -78,7 +78,7 @@ class EventFeedTest extends TestCase
 
         $this->assertSame([
             'id', 'issue_id', 'issue_title', 'level', 'environment', 'critical', 'message', 'culprit',
-            'occurred_at', 'received_at', 'is_new_issue', 'is_regression', 'event_count',
+            'occurred_at', 'received_at', 'is_new_issue', 'is_regression', 'is_sample', 'event_count',
         ], array_keys($item));
         $this->assertTrue($item['is_new_issue']);
         $this->assertSame('2025-10-09T08:53:20.000Z', $item['received_at']);

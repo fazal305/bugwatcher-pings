@@ -295,6 +295,8 @@ function FeedView({ slug }) {
         <ConnectionPill status={status} failed={failed} />
       </div>
 
+      {projects.current?.role === 'admin' && <TestErrorButton slug={slug} />}
+
       {projects.list.length > 1 && (
         <div className="mt-4">
           <label htmlFor="feed-project" className="block text-sm font-medium">
@@ -393,6 +395,35 @@ function FeedView({ slug }) {
         )}
       </div>
     </>
+  )
+}
+
+function TestErrorButton({ slug }) {
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState(null)
+
+  async function fire() {
+    setBusy(true)
+    setResult(null)
+    try {
+      const data = await api(`/projects/${encodeURIComponent(slug)}/test-error`, { method: 'POST' })
+      setResult({ ok: true, text: data.message })
+    } catch (err) {
+      setResult({ ok: false, text: err.message })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+      <Button variant="secondary" busy={busy} onClick={fire}>
+        Fire a test error
+      </Button>
+      <p role="status" className={`text-sm ${result && !result.ok ? 'text-error' : 'text-muted'}`}>
+        {result ? result.text : 'Sends a labelled [Test] error through the real ingest pipeline.'}
+      </p>
+    </div>
   )
 }
 

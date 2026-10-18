@@ -45,6 +45,8 @@ return [
 
     'demo' => [
         'login_enabled' => (bool) env('DEMO_LOGIN_ENABLED', false),
+        // demo:reset keeps visitors' events (test errors) from this many hours.
+        'event_ttl_hours' => (int) env('DEMO_EVENT_TTL_HOURS', 24),
     ],
 
 ];

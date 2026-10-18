@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use App\Pings\Masker;
+use App\Pings\PingQueue;
 use App\Pings\PingRateLimiter;
 use App\Pings\PingSpool;
 use App\Pings\PingValidator;
@@ -41,6 +42,7 @@ class AppServiceProvider extends ServiceProvider
         ));
         $this->app->singleton(PingValidator::class, fn () => new PingValidator(config('pings.max_frames'), config('pings.max_context_lines')));
         $this->app->singleton(Masker::class, fn () => new Masker(config('pings.sensitive_keys')));
+        $this->app->singleton(PingQueue::class);
         $this->app->singleton(PingSpool::class, fn () => new PingSpool(
             Redis::connection(config('pings.redis_connection')),
             config('pings.spool_key'),
@@ -105,6 +107,9 @@ class AppServiceProvider extends ServiceProvider
 
         RateLimiter::for('webhook-test', fn (Request $request) => Limit::perMinute(config('webhooks.test_rate_limit_per_minute'))
             ->by('webhook-test:'.($request->user()?->id ?: $request->ip()))->response($tooMany));
+
+        RateLimiter::for('test-error', fn (Request $request) => Limit::perMinute(5)
+            ->by('test-error:'.($request->user()?->id ?: $request->ip()))->response($tooMany));
 
         RateLimiter::for('demo', fn (Request $request) => [
             Limit::perMinute(5)->by('demo-ip:'.$request->ip())->response($tooMany),

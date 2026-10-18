@@ -16,6 +16,7 @@ class Issue extends Model
             'first_seen_at' => 'datetime',
             'last_seen_at' => 'datetime',
             'event_count' => 'integer',
+            'is_sample' => 'boolean',
         ];
     }
 

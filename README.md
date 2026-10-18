@@ -2,7 +2,26 @@
 
 BugWatcher Pings is a real-time error monitoring and alerting app. Your applications send error reports ("pings") to a Laravel API, which queues them on Redis. Workers parse each report, group repeats of the same error into one issue and store it, then broadcast it over WebSockets to a React dashboard with a live feed and send an alert to Slack or Discord.
 
-**Live demo:** not deployed yet.
+## Live demo
+
+| | URL | Status |
+|---|---|---|
+| Dashboard | https://bugwatcher-pings.vercel.app | Deploying, not verified yet |
+| API | https://bugwatcher-pings-api.onrender.com/api/health | Deploying, not verified yet |
+
+"Try the demo" signs into a shared account whose project holds labelled sample errors, and its "Fire a test error" button sends a real report through the ingest pipeline so you can watch it arrive live. The API runs on Render's free tier, which sleeps when idle: the first request after a quiet spell can take up to about 50 seconds.
+
+## Screenshots
+
+| Live feed | Event detail |
+|---|---|
+| ![Live feed with a test error at the top and a sample error expanded](docs/screenshots/feed.png) | ![Event detail with the highlighted source of the failing frame and the masked request](docs/screenshots/event-detail.png) |
+| **Alerts settings** | **Live feed, dark theme** |
+| ![Alerts card with a Slack and a Discord endpoint](docs/screenshots/alerts-settings.png) | ![The live feed in the dark theme](docs/screenshots/feed-dark.png) |
+
+![Landing page](docs/screenshots/landing.png)
+
+All screenshots are of the app running locally against the seeded demo data; the test errors in them were sent with the "Fire a test error" button.
 
 ## Status
 
@@ -18,6 +37,9 @@ Working so far:
 - Error ingestion: `POST /api/v1/ping` masks secrets and queues each report on Redis without touching the database, background workers group reports into issues by fingerprint, and reports are kept in Redis while the database is down
 - JavaScript (browser) and PHP SDKs in [`sdks/`](sdks/README.md)
 - Alerts: Slack, Discord and signed JSON webhooks per project, filtered by severity and environment, with a per-issue cooldown, a "Send test" button, a delivery log and server-side protection against requests to private networks (see [Alerts](#alerts))
+- Demo: sample data in the demo project only, a "Fire a test error" button and a daily reset (see [The demo](#the-demo))
+- Public pages: Privacy Policy, Terms of Service, Cookie Policy and FAQ, linked from the footer; per-page titles and canonical links, Open Graph and Twitter card tags, `robots.txt` and `sitemap.xml`
+- Security headers on every API response, and a Content-Security-Policy for the web app (see [Security headers](#security-headers))
 
 ## Accounts, projects and roles
 
@@ -39,7 +61,13 @@ Authorization is handled by `ProjectPolicy`, run as route middleware before vali
 
 Sign-in, sign-up and the demo are rate limited per IP address and (for sign-in and sign-up) per email address; over the limit the API answers `429` with a short message that the web app shows.
 
-Run `php artisan db:seed` to create the demo account ("Demo") and its project, "Demo Storefront (sample data)". The seeder is safe to run again. The demo account is shared by everyone who uses it, and the app says so while you're in it. Because of that it can't add, change or remove members or rotate keys (`403` with a short explanation), and the dashboard hides those controls for it.
+Run `php artisan db:seed` to create the demo account ("Demo") and its project, "Demo Storefront (sample data)", with sample errors (see [The demo](#the-demo)). The seeder is safe to run again. The demo account is shared by everyone who uses it, and the app says so while you're in it. Because of that it can't add, change or remove members or rotate keys (`403` with a short explanation), and the dashboard hides those controls for it.
+
+## The demo
+
+- **Sample data.** The demo project holds six sample issues with thirteen events (every severity and environment, one resolved issue, stack frames with PHP, JavaScript and TypeScript source, and request data showing `[Filtered]` values). Each sample row has `is_sample = true`, and the feed and the event page show a "Sample data" badge for it. Sample data is only ever created in the demo project (`App\Demo\DemoProject`), never in anyone else's: a new account's projects start empty.
+- **Fire a test error.** `POST /api/projects/{slug}/test-error` (project admins, which includes the demo account in its own project; 5 a minute per user) builds a fixed report whose message starts with `[Test]`, runs it through the same `PingValidator`, masking and `ingest` queue as `POST /api/v1/ping`, and answers `202` with the future event id. A queue worker stores and broadcasts it, so the card arrives in the live feed over WebSockets. The report carries an `Authorization` header, a `token` query parameter and a `password` field, so the stored event shows masking at work. The dashboard shows the button above the feed for project admins.
+- **Daily reset.** `php artisan demo:reset` (or `POST /api/cron/demo-reset` with the cron secret, called daily by `.github/workflows/demo-cleanup.yml`) restores the demo project's name, replaces its sample data with a fresh copy timed relative to now, deletes visitors' events older than `DEMO_EVENT_TTL_HOURS` (default 24) and any issues left without events, recounts the remaining issues, and deletes projects the demo account created. It creates the demo account and project if they are missing, so on a new deployment the first run also seeds the demo.
 
 ## Error ingestion
 
@@ -133,12 +161,13 @@ All of these need a signed-in member of the project (either role); anyone else g
 | `GET /api/projects/{slug}/events/{id}` | One event in full: stack frames with their context lines, the request and the user context, as masked at ingestion, plus its issue. The dashboard shows it at `/app/projects/{slug}/events/{id}` |
 | `GET /api/projects/{slug}/issues?status=open\|resolved&q=` | Issues by last seen, 50 a page; `q` searches titles, ignoring case |
 | `PATCH /api/projects/{slug}/issues/{id}` | `status`: `open` or `resolved` |
+| `POST /api/projects/{slug}/test-error` | Admins only: queues a labelled test error (see [The demo](#the-demo)). 5 a minute per user |
 
 ### Retention and the cron endpoint
 
 `php artisan pings:prune` deletes events and webhook delivery records older than `PINGS_RETENTION_DAYS` (default 30) in batches of 5,000; it runs daily. Issues and webhook endpoints are kept.
 
-`POST /api/cron/run` runs `pings:drain-spool` and `pings:prune` for hosts without cron. It needs `Authorization: Bearer <CRON_SECRET>` (compared in constant time), answers 401 otherwise or when `CRON_SECRET` is empty, and is limited to 10 calls a minute per IP.
+`POST /api/cron/run` runs `pings:drain-spool` and `pings:prune` for hosts without cron, and `POST /api/cron/demo-reset` runs `demo:reset`. Both need `Authorization: Bearer <CRON_SECRET>` (compared in constant time), answer 401 otherwise or when `CRON_SECRET` is empty, and are limited to 10 calls a minute per IP.
 
 ### Measured throughput and latency
 
@@ -294,12 +323,43 @@ The target is to start the request within 50 ms of the ping being processed. Mea
 
 With warm workers every request started within 50 ms; the first job after a worker starts took 104 to 142 ms (connections and classes loading), which is what pushes the first run's p95 over the target. Broadcasting the event to Reverb accounts for only about 5 to 7 ms of the median; most of the rest is the queue hop (the job is pushed to Redis and picked up by a worker) plus loading the endpoint and building the payload, with every database and Redis round trip crossing from Windows into Docker's VM. This was 20 pings at a low rate, one endpoint, a receiver on the same machine, and a different setup from production; it says nothing about the delay under load, when workers are busy with a backlog of pings (webhook jobs go first, but a worker finishes the job it is on), and the clocks compared are on one machine. Slack's and Discord's own latency comes on top.
 
+## Security headers
+
+Every response under `/api` carries `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY` and `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`, plus `Strict-Transport-Security` over HTTPS (`App\Http\Middleware\SecurityHeaders`, registered globally so errors raised before a route runs get them too). Laravel Horizon's local dashboard is left alone.
+
+The web app's headers are set in `web/vercel.json`. Its Content-Security-Policy is `default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self' https://bugwatcher-pings-api.onrender.com wss://*.pusher.com https://*.pusher.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`. Fonts are self-hosted, and the build never inlines them as `data:` URLs (which `font-src 'self'` would block). This policy, with the API and Pusher origins swapped for the local API and Reverb, was applied to a `vite preview` build in Chromium while signing into the demo, receiving a live test error, opening an event (which loads highlight.js), and visiting the project settings and every public page: no violations were reported. The Pusher origins themselves are only exercised once the app runs against Pusher in production.
+
+## Measured results
+
+### Against the design targets
+
+| Target | Measured | Met? |
+|---|---|---|
+| Ingest 5,000 pings a second | About 500 a second with workers running and 780 without, on one laptop VM shared with the load generator ([details](#measured-throughput-and-latency)) | No, not on this hardware |
+| Start each alert request within 50 ms of processing | p95 39 ms with warm workers; the first job after a worker starts took 104 to 142 ms ([details](#measured-dispatch-delay)) | With warm workers |
+| 99.99% availability | Not measured. The free hosting tiers sleep when idle and have no redundancy | No: it is a design target, not a guarantee (see the Terms) |
+
+### Lighthouse and accessibility
+
+Lighthouse 13.5 (Microsoft Edge headless, default mobile and desktop presets) against a local `vite preview` build on 19 October 2026. Scores are performance / accessibility / best practices / SEO. "Before" is the previous commit, which had no Privacy page.
+
+| Page | Mobile before | Mobile after | Desktop before | Desktop after |
+|---|---|---|---|---|
+| `/` | 91 / 100 / 100 / 100 | 96 / 100 / 100 / 100 | 100 / 100 / 100 / 100 | 100 / 100 / 100 / 100 |
+| `/signin` | 95 / 100 / 100 / 100 | 96 / 100 / 100 / 100 | 100 / 100 / 100 / 100 | 100 / 100 / 100 / 100 |
+| `/terms` | 95 / 100 / 100 / 100 | 97 / 100 / 100 / 100 | 100 / 100 / 100 / 100 | 100 / 100 / 100 / 100 |
+| `/privacy` | (new) | 96 / 100 / 100 / 100 | (new) | 100 / 100 / 100 / 100 |
+
+Mobile performance varies by a few points between runs. What changed: the dashboard pages and the realtime client (`laravel-echo` and `pusher-js`) now load on demand, so the JavaScript a public page downloads went from 468 KB (141 KB gzipped) to 350 KB (110 KB gzipped); and the body font is preloaded, which took the Privacy page's layout shift from 0.14 (long text reflowing when the font arrived) to 0.001.
+
+The signed-in pages were checked with axe-core (WCAG 2.0, 2.1 and 2.2 A and AA rules) through Playwright instead of Lighthouse: the live feed with a card expanded, an event page with highlighted source, project settings and the projects list, in the light and dark themes, plus every public page in both themes. No violations were found. Animations (new feed cards, spinners, skeletons, smooth scrolling) are switched off under `prefers-reduced-motion: reduce`, which an end-to-end test checks for new feed cards.
+
 ## Stack
 
 | Part | Technology |
 |---|---|
 | `api/` | Laravel 13 (PHP 8.4), Laravel Sanctum, Laravel Octane on FrankenPHP (production image), PostgreSQL, Redis queue via Predis, Laravel Reverb (local) or Pusher (production) for broadcasting, Laravel Horizon for local queue monitoring |
-| `web/` | React 19, Vite, Tailwind CSS 4, React Router — plain JavaScript/JSX |
+| `web/` | React 19, Vite, Tailwind CSS 4, React Router — plain JavaScript/JSX. Playwright and axe-core for end-to-end tests |
 | `sdks/` | Dependency-free JavaScript (browser) and PHP clients for the ingestion API |
 
 ## Local setup
@@ -353,6 +413,19 @@ cd api && php artisan test && ./vendor/bin/pint --test
 cd web && npm run lint && npm run build
 ```
 
+### End-to-end tests
+
+`web/e2e` has Playwright tests that run against the full local stack: the landing page and its metadata, the legal pages and footer links, `robots.txt`, `sitemap.xml` and the social image, sign-in errors, trying the demo, a test error arriving in the live feed over WebSockets (and without the entrance animation under reduced motion), expanding a card, highlighted source on the event page, no sideways scrolling at 375 px on every public and dashboard page, and axe-core checks in both themes.
+
+```bash
+docker compose up -d
+cd web
+npx playwright install chromium   # once
+npm run test:e2e
+```
+
+The config starts `php artisan serve` on port 8473, Reverb on 8080, a queue worker and the Vite dev server, reusing any that are already running, with the settings in `api/.env` (so `DEMO_LOGIN_ENABLED=true` and a `JWT_SECRET` are needed). Before the tests it runs the migrations and `demo:reset --hours=0`, which puts the local demo project back to its sample data. The tests share the demo sign-in limit (5 a minute per IP), so leave a minute between runs. They are not part of CI, which has no Reverb or browser set up.
+
 API tests use an in-memory SQLite database by default. To run them against PostgreSQL, set `DB_CONNECTION=pgsql` and the other `DB_*` variables in the environment, as CI does. The spool and Redis rate-limit tests need Redis on `127.0.0.1:6379` (`docker compose up -d`); they use their own key prefix.
 
 ## Environment variables
@@ -382,7 +455,10 @@ API tests use an in-memory SQLite database by default. To run them against Postg
 | `PINGS_RETENTION_DAYS` | Events older than this are deleted by `pings:prune` (default 30) |
 | `PINGS_MAX_SPOOL_CYCLES` | How many times a ping that keeps failing goes back through the spool before it is set aside (default 10) |
 | `QUEUE_WORKERS` | Docker image only: queue workers started next to the web server (default 1) |
-| `DEMO_LOGIN_ENABLED` | `true` turns on `POST /api/auth/demo` (default `false`). Needs the demo account from `php artisan db:seed` |
+| `DEMO_LOGIN_ENABLED` | `true` turns on `POST /api/auth/demo` (default `false`). Needs the demo account from `php artisan db:seed` or `demo:reset` |
+| `DEMO_EVENT_TTL_HOURS` | `demo:reset` keeps visitors' events in the demo project for this many hours (default 24) |
+| `PINGS_REDIS_CONNECTION` | Redis connection (from `config/database.php`) for the spool and alert cooldowns (default `default`) |
+| `PORT` | Docker image only: the port the web server listens on (default 8080; Render sets it) |
 | `WEBHOOKS_ALLOW_PRIVATE` | Local testing only: `true` lets generic webhooks reach private and loopback addresses over `http://` on any port (default `false`). Ignored when `APP_ENV=production` |
 | `REDIS_QUEUE_BLOCK_FOR` | Seconds an idle worker waits on its first queue before checking the others (default 5) |
 
@@ -395,7 +471,20 @@ API tests use an in-memory SQLite database by default. To run them against Postg
 | `VITE_REVERB_APP_KEY`, `VITE_REVERB_HOST`, `VITE_REVERB_PORT`, `VITE_REVERB_SCHEME` | Local Reverb server; the key is `REVERB_APP_KEY` from the API's `.env` |
 | `VITE_PUSHER_KEY`, `VITE_PUSHER_CLUSTER` | Pusher Channels app key and cluster (the key is public) |
 
-## Deploying the API
+## Deploying
+
+Nothing below has been done yet; it is the intended setup. Use separate secrets per environment and never commit them.
+
+1. **Database (Supabase PostgreSQL).** Create a project, then a dedicated schema and login role for the app, as described under [Row level security](#row-level-security). Use the session pooler's host and port (IPv4) with `DB_SSLMODE=require`, `DB_SEARCH_PATH=<schema>` and the role's credentials. Migrations run when the API starts.
+2. **Redis (Upstash).** Create a Redis database and set `REDIS_URL` to its `rediss://default:<password>@<host>:6379` URL (TLS). Keep `CACHE_STORE=redis`, `QUEUE_CONNECTION=redis` and `PINGS_CACHE_STORE=redis`.
+3. **Realtime (Pusher Channels).** Create a Channels app. On the API set `BROADCAST_CONNECTION=pusher`, `PUSHER_APP_ID`, `PUSHER_APP_KEY`, `PUSHER_APP_SECRET` and `PUSHER_APP_CLUSTER`; on the web app set `VITE_BROADCAST_DRIVER=pusher`, `VITE_PUSHER_KEY` and `VITE_PUSHER_CLUSTER`. Only the key and cluster are public.
+4. **API (Render).** A Docker web service with root directory `api` and health check path `/api/health`. Set `APP_KEY` (from `php artisan key:generate --show`), `APP_URL`, the `DB_*` and Redis variables above, the Pusher variables, `JWT_SECRET` (32 or more random characters), `CRON_SECRET`, `FRONTEND_URL=https://bugwatcher-pings.vercel.app` and `DEMO_LOGIN_ENABLED=true`.
+5. **Web app (Vercel).** Import the repository with root directory `web` (Vite preset) and set `VITE_API_URL=https://bugwatcher-pings-api.onrender.com/api` plus the Pusher variables. `web/vercel.json` adds the security headers and sends unknown paths to `index.html`; Vercel serves real files (`robots.txt`, `sitemap.xml`, `og-image.png`, `assets/`) before it applies that rewrite.
+6. **Scheduled jobs (GitHub Actions).** Set the repository variable `API_URL` (`https://bugwatcher-pings-api.onrender.com`) and the secret `CRON_SECRET`. `cron.yml` then drains the spool and prunes every 15 minutes, and `demo-cleanup.yml` resets the demo daily. Run "Demo cleanup" once by hand after the first deploy to create the demo account and its sample data.
+
+Then check that both URLs answer (the first API request may take a minute while the service wakes), try the demo, fire a test error, and update the [Live demo](#live-demo) table.
+
+### The API image
 
 `api/Dockerfile` builds a production image (FrankenPHP, PHP 8.4, OPcache, `pdo_pgsql`, `pcntl`) that listens on `$PORT` (default 8080). It sets `APP_ENV=production`, `APP_DEBUG=false` and logs to stderr; it contains no secrets, so set `APP_KEY`, the `DB_*` and Redis variables, the `PUSHER_*` variables (with `BROADCAST_CONNECTION=pusher`), `JWT_SECRET` and `FRONTEND_URL` in the host's environment. On every start, `api/docker/start.sh` caches config, routes and views, runs `php artisan migrate --force`, switches on row level security (`php artisan db:enable-rls`, see below), starts `QUEUE_WORKERS` Redis queue workers (queues `webhooks,ingest,default`) plus one more on `ingest,default`, and the scheduler, in the background (each restarted if it exits) and then the web server: Laravel Octane on FrankenPHP in worker mode, which keeps the app booted between requests. Horizon and Reverb are not run in production.
 
@@ -409,13 +498,17 @@ The API reaches PostgreSQL through its own role, which owns the app's schema and
 
 For PostgreSQL in a dedicated schema of a shared database (for example a Supabase project), give the app its own login role that owns the schema, with no access granted to other roles, and set `DB_SEARCH_PATH` to that schema.
 
-## Deploying the web app
+### The web app
 
-The web app is intended for Vercel (project root `web`, Vite preset) with `VITE_API_URL` pointing at the API. `web/vercel.json` sets a Content-Security-Policy whose `connect-src` allows `'self'`, the API origin (`https://bugwatcher-pings-api.onrender.com`) and Pusher's WebSocket and HTTP endpoints. If the API moves, update that origin, or the app cannot reach the API.
+`web/vercel.json` sets a Content-Security-Policy whose `connect-src` allows `'self'`, the API origin (`https://bugwatcher-pings-api.onrender.com`) and Pusher's WebSocket and HTTP endpoints (see [Security headers](#security-headers)). If the API moves, update that origin, or the app cannot reach the API. The canonical, Open Graph and sitemap URLs in `web/index.html`, `web/public/robots.txt`, `web/public/sitemap.xml` and `web/src/hooks/useDocumentTitle.js` use `https://bugwatcher-pings.vercel.app`; change them together if the site moves.
 
 ## Security
 
 See [SECURITY.md](SECURITY.md) to report a vulnerability.
+
+## Privacy and terms
+
+The web app has a [Privacy Policy](https://bugwatcher-pings.vercel.app/privacy), [Terms of Service](https://bugwatcher-pings.vercel.app/terms), [Cookie Policy](https://bugwatcher-pings.vercel.app/cookies) and [FAQ](https://bugwatcher-pings.vercel.app/faq) (sources in `web/src/pages/public/`). They describe the hosted service as set up above; if you run your own copy with other providers or retention settings, update them.
 
 ## License
 
@@ -423,4 +516,6 @@ Free for personal, educational and other noncommercial use under the [PolyForm N
 
 ## Commercial use
 
-Using BugWatcher Pings for commercial purposes requires a paid commercial license. Contact fazalabbas2002@gmail.com.
+Using BugWatcher Pings for commercial purposes, including running it as a service for paying customers or inside a business, requires a paid commercial license. Contact Fazal Abbas at fazalabbas2002@gmail.com with a short description of how you plan to use it.
+
+© 2026 Fazal Abbas

@@ -271,7 +271,7 @@ function EndpointRow({ path, endpoint, canManage, onChange, onRemoved, onEdit })
             className="inline-flex min-h-11 items-center gap-2 rounded-lg px-1 text-sm font-medium disabled:opacity-60"
           >
             <span aria-hidden="true" className={`relative inline-block h-6 w-10 rounded-full transition-colors ${endpoint.enabled ? 'bg-accent' : 'bg-line-strong'}`}>
-              <span className={`absolute top-0.5 size-5 rounded-full bg-surface shadow transition-transform ${endpoint.enabled ? 'translate-x-[1.125rem]' : 'translate-x-0.5'}`} />
+              <span className={`absolute left-0 top-0.5 size-5 rounded-full bg-surface shadow transition-transform ${endpoint.enabled ? 'translate-x-[1.125rem]' : 'translate-x-0.5'}`} />
             </span>
             {endpoint.enabled ? 'On' : 'Off'}
           </button>

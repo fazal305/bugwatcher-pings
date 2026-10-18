@@ -27,7 +27,7 @@ class RealtimeTest extends TestCase
 
     private const FEED_FIELDS = [
         'id', 'issue_id', 'issue_title', 'level', 'environment', 'critical', 'message', 'culprit',
-        'occurred_at', 'received_at', 'is_new_issue', 'is_regression', 'event_count',
+        'occurred_at', 'received_at', 'is_new_issue', 'is_regression', 'is_sample', 'event_count',
     ];
 
     private function useReverb(): void

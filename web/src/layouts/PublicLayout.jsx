@@ -2,6 +2,13 @@ import { Link, Outlet } from 'react-router'
 import { Wordmark } from '../components/Logo'
 import { useAuth } from '../lib/auth'
 
+const FOOTER_LINKS = [
+  ['/faq', 'FAQ'],
+  ['/privacy', 'Privacy'],
+  ['/terms', 'Terms'],
+  ['/cookies', 'Cookies'],
+]
+
 export default function PublicLayout() {
   const { status } = useAuth()
 
@@ -34,9 +41,17 @@ export default function PublicLayout() {
       <footer className="border-t border-line">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-6 text-sm text-muted sm:px-6">
           <p>© 2026 Fazal Abbas</p>
-          <Link to="/terms" className="underline-offset-4 hover:text-ink hover:underline">
-            Terms
-          </Link>
+          <nav aria-label="Legal and help">
+            <ul className="flex flex-wrap gap-x-4 gap-y-1">
+              {FOOTER_LINKS.map(([to, label]) => (
+                <li key={to}>
+                  <Link to={to} className="inline-block py-1 underline-offset-4 hover:text-ink hover:underline">
+                    {label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
         </div>
       </footer>
     </div>

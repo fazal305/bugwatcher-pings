@@ -30,7 +30,7 @@ class EventController extends Controller
         $limit = (int) ($data['limit'] ?? 50);
 
         $query = $project->events()
-            ->select(['id', 'project_id', 'issue_id', 'level', 'environment', 'message', 'is_regression', 'occurred_at', 'received_at'])
+            ->select(['id', 'project_id', 'issue_id', 'level', 'environment', 'message', 'is_regression', 'is_sample', 'occurred_at', 'received_at'])
             ->with('issue:id,title,culprit,event_count,first_seen_at')
             ->orderByDesc('received_at')
             ->orderByDesc('id')
@@ -81,6 +81,7 @@ class EventController extends Controller
             'release' => $event->release,
             'sdk' => $event->sdk,
             'is_regression' => $event->is_regression,
+            'is_sample' => $event->is_sample,
             'occurred_at' => FeedItem::time($event->occurred_at),
             'received_at' => FeedItem::time($event->received_at),
             'processed_at' => FeedItem::time($event->processed_at),

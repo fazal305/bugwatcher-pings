@@ -29,6 +29,7 @@ export function EventTags({ event }) {
       {event.critical && <span className={`${tag} bg-fatal text-surface`}>Critical</span>}
       {event.is_new_issue && <span className={`${tag} bg-accent-tint text-accent-strong`}>New issue</span>}
       {event.is_regression && <span className={`${tag} bg-warning-tint text-warning`}>Regression</span>}
+      {event.is_sample && <span className={`${tag} border border-dashed border-line-strong font-medium text-muted`}>Sample data</span>}
     </>
   )
 }

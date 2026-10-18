@@ -1,6 +1,7 @@
+import { Suspense } from 'react'
 import { Link, Navigate, Outlet, useLocation } from 'react-router'
 import { LogoMark, Wordmark } from '../components/Logo'
-import { Button, ErrorState, OfflineBanner, Skeleton } from '../components/ui'
+import { Button, ErrorState, OfflineBanner, PageLoading, Skeleton } from '../components/ui'
 import { useAuth } from '../lib/auth'
 
 const isFeedPath = (path) => path === '/app' || /^\/app\/projects\/[^/]+\/(feed|events)(\/|$)/.test(path)
@@ -102,7 +103,9 @@ export default function AppLayout() {
           </p>
         )}
         <main id="main" className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-8 sm:py-10">
-          <Outlet />
+          <Suspense fallback={<PageLoading />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>

@@ -35,6 +35,7 @@ final class FeedItem
             'received_at' => self::time($event->received_at),
             'is_new_issue' => $isNewIssue,
             'is_regression' => (bool) $event->is_regression,
+            'is_sample' => (bool) $event->is_sample,
             'event_count' => (int) $issue->event_count,
         ];
     }

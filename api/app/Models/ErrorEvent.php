@@ -25,6 +25,7 @@ class ErrorEvent extends Model
             'request' => 'array',
             'user_context' => 'array',
             'is_regression' => 'boolean',
+            'is_sample' => 'boolean',
             'occurred_at' => 'datetime',
             'received_at' => 'datetime',
             'processed_at' => 'datetime',

@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\MemberController;
 use App\Http\Controllers\Api\PingController;
 use App\Http\Controllers\Api\ProjectController;
 use App\Http\Controllers\Api\RealtimeTokenController;
+use App\Http\Controllers\Api\TestErrorController;
 use App\Http\Controllers\Api\WebhookController;
 use App\Http\Middleware\PingCors;
 use Illuminate\Routing\Middleware\SubstituteBindings;
@@ -21,7 +22,8 @@ Route::match(['POST', 'OPTIONS'], '/v1/ping', PingController::class)
     ->middleware(PingCors::class)
     ->withoutMiddleware(SubstituteBindings::class);
 
-Route::post('/cron/run', CronController::class)->middleware('throttle:cron');
+Route::post('/cron/run', [CronController::class, 'run'])->middleware('throttle:cron');
+Route::post('/cron/demo-reset', [CronController::class, 'demoReset'])->middleware('throttle:cron');
 
 Route::post('/auth/register', [AuthController::class, 'register'])->middleware('throttle:register');
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
@@ -51,6 +53,8 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
 
         Route::get('/events', [EventController::class, 'index'])->can('view', 'project');
         Route::get('/events/{event}', [EventController::class, 'show'])->can('view', 'project')->where('event', '[0-9A-Za-z]{26}');
+        Route::post('/test-error', TestErrorController::class)->can('manage', 'project')->middleware('throttle:test-error');
+
         Route::get('/issues', [IssueController::class, 'index'])->can('view', 'project');
         Route::patch('/issues/{issue}', [IssueController::class, 'update'])->can('view', 'project')->whereNumber('issue');
 

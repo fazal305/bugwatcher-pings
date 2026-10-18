@@ -75,6 +75,18 @@ export function Skeleton({ className = '' }) {
   return <div aria-hidden="true" className={`animate-pulse rounded-lg bg-sunken ${className}`} />
 }
 
+export function PageLoading() {
+  return (
+    <div aria-busy="true" className="space-y-4">
+      <span className="sr-only" role="status">
+        Loading…
+      </span>
+      <Skeleton className="h-9 w-48" />
+      <Skeleton className="h-32" />
+    </div>
+  )
+}
+
 export function ErrorState({ title = "Couldn't load this", message, onRetry }) {
   return (
     <div role="alert" className="rounded-card border border-line bg-surface px-6 py-10 text-center">

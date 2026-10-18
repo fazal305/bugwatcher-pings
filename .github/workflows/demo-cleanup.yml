@@ -1,0 +1,24 @@
+name: Demo cleanup
+
+# The demo account is shared, so once a day its project goes back to the seeded sample data and visitors' test errors
+# older than DEMO_EVENT_TTL_HOURS are removed. Needs the API_URL variable and CRON_SECRET secret, as cron.yml does.
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    if: vars.API_URL != ''
+    steps:
+      - name: Reset the demo project
+        env:
+          API_URL: ${{ vars.API_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail-with-body --silent --show-error --max-time 120 --retry 2 --retry-delay 30 \
+            -X POST -H "Authorization: Bearer $CRON_SECRET" -H "Accept: application/json" \
+            "$API_URL/api/cron/demo-reset"

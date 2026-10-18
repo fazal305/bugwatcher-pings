@@ -1,8 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { api, getToken, setToken } from './api'
-import { resetRealtime } from './realtime'
 
 const AuthContext = createContext(null)
+
+// Loaded lazily, so the realtime client stays out of the bundle for pages that never open the live feed.
+function resetRealtime() {
+  import('./realtime').then((realtime) => realtime.resetRealtime())
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)

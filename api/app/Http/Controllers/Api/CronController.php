@@ -8,15 +8,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 
 /**
- * Lets an external scheduler (a GitHub Actions workflow) drain the spool and prune old events on hosts without cron
- * or that sleep when idle. Disabled unless CRON_SECRET is set.
+ * Lets an external scheduler (GitHub Actions workflows) run maintenance on hosts without cron or that sleep when
+ * idle. Disabled unless CRON_SECRET is set.
  */
 class CronController extends Controller
 {
-    public function __invoke(Request $request): JsonResponse
+    public function run(Request $request): JsonResponse
     {
-        $secret = (string) config('services.cron.secret');
-        if ($secret === '' || ! hash_equals($secret, (string) $request->bearerToken())) {
+        if (! $this->authorized($request)) {
             return response()->json(['message' => 'Unauthorized.'], 401);
         }
 
@@ -27,5 +26,23 @@ class CronController extends Controller
         $prune = trim(Artisan::output());
 
         return response()->json(['message' => 'OK', 'spool' => $spool, 'prune' => $prune]);
+    }
+
+    public function demoReset(Request $request): JsonResponse
+    {
+        if (! $this->authorized($request)) {
+            return response()->json(['message' => 'Unauthorized.'], 401);
+        }
+
+        Artisan::call('demo:reset');
+
+        return response()->json(['message' => 'OK', 'demo' => trim(Artisan::output())]);
+    }
+
+    private function authorized(Request $request): bool
+    {
+        $secret = (string) config('services.cron.secret');
+
+        return $secret !== '' && hash_equals($secret, (string) $request->bearerToken());
     }
 }

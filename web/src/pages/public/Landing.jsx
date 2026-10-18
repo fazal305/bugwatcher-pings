@@ -12,7 +12,7 @@ export default function Landing() {
   useDocumentTitle()
   return (
     <div className="mx-auto max-w-5xl px-4 py-16 sm:px-6 sm:py-24">
-      <p className="text-sm font-semibold text-accent">In development</p>
+      <p className="text-sm font-semibold text-accent">Real-time error monitoring</p>
       <h1 className="mt-3 max-w-3xl text-4xl leading-tight sm:text-5xl">BugWatcher Pings</h1>
       <p className="mt-5 max-w-2xl text-lg text-muted">
         Error reports from your apps, grouped into issues and shown in a live feed, with a ping to your team in Slack or Discord when something breaks.
@@ -26,7 +26,7 @@ export default function Landing() {
 
       <section aria-labelledby="how" className="mt-20">
         <h2 id="how" className="text-2xl">
-          How it will work
+          How it works
         </h2>
         <ol className="mt-6 grid gap-4 sm:grid-cols-3">
           {STEPS.map(([title, text], i) => (
