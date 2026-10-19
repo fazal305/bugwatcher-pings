@@ -28,9 +28,10 @@ class BroadcastAuthController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 401);
         }
 
-        $socketId = (string) $request->input('socket_id');
-        $channel = (string) $request->input('channel_name');
-        if (preg_match('/\A\d+\.\d+\z/', $socketId) !== 1 || preg_match('/\Aprivate-project\.([a-z0-9-]{1,64})\z/', $channel, $match) !== 1) {
+        $socketId = $request->input('socket_id');
+        $channel = $request->input('channel_name');
+        if (! is_string($socketId) || ! is_string($channel)
+            || preg_match('/\A\d+\.\d+\z/', $socketId) !== 1 || preg_match('/\Aprivate-project\.([a-z0-9-]{1,64})\z/', $channel, $match) !== 1) {
             return response()->json(['message' => 'Invalid subscription request.'], 422);
         }
         $slug = $match[1];

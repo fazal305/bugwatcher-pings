@@ -183,6 +183,19 @@ class RealtimeTest extends TestCase
         $this->authorize($token, 'private-project.'.$project->slug, socketId: 'abc')->assertStatus(422);
     }
 
+    public function test_non_string_channel_names_and_socket_ids_get_422_not_500(): void
+    {
+        $this->useReverb();
+        $user = User::factory()->create();
+        $project = Project::factory()->withMember($user)->create();
+        $headers = ['Authorization' => 'Bearer '.$this->tokenFor($user)];
+        $channel = 'private-project.'.$project->slug;
+
+        $this->postJson('/api/broadcasting/auth', ['socket_id' => self::SOCKET_ID, 'channel_name' => [$channel]], $headers)->assertStatus(422);
+        $this->postJson('/api/broadcasting/auth', ['socket_id' => [self::SOCKET_ID], 'channel_name' => $channel], $headers)->assertStatus(422);
+        $this->postJson('/api/broadcasting/auth', ['socket_id' => self::SOCKET_ID, 'channel_name' => ['x' => 'private-project.x']], $headers)->assertStatus(422);
+    }
+
     public function test_processing_a_ping_broadcasts_only_the_feed_fields_on_the_projects_private_channel(): void
     {
         $sent = [];
