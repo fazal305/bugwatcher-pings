@@ -5,6 +5,7 @@ const DEDUPE_MS = 1000;
 const MAX_FRAMES = 50;
 
 let config = null;
+let sentCount = 0;
 const recent = new Map();
 
 // Chrome/Edge/Node: "    at fn (https://x/app.js:10:5)" or "    at https://x/app.js:10:5"
@@ -95,9 +96,11 @@ function beacon(ping) {
 
 export function captureException(error, { level = 'error', ...extra } = {}) {
   try {
-    if (!config) return;
+    if (!config || sentCount >= config.maxReports) return;
     const ping = buildPing(error, level, extra);
-    if (!isDuplicate(ping)) send(ping);
+    if (isDuplicate(ping)) return;
+    sentCount++;
+    send(ping);
   } catch {
     // Reporting must never break the page.
   }
@@ -107,13 +110,21 @@ export function setUser(user) {
   if (config) config.user = user && user.id != null ? { id: user.id } : null;
 }
 
-export function init({ key, endpoint, environment = 'production', release } = {}) {
+export function init({ key, endpoint, environment = 'production', release, maxReports } = {}) {
   try {
     if (!key || !endpoint || typeof window === 'undefined') return;
     const first = config === null;
-    config = { key, endpoint, environment, release, user: null };
+    config = {
+      key,
+      endpoint,
+      environment,
+      release,
+      user: null,
+      maxReports: Number.isInteger(maxReports) && maxReports > 0 ? maxReports : Infinity,
+    };
     if (!first) return;
 
+    // Listeners only observe: no preventDefault or stopPropagation, so the app's own handlers always run.
     window.addEventListener('error', (event) => {
       captureException(event.error || event.message, { file: event.filename, line: event.lineno });
     });

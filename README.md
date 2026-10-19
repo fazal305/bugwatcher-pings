@@ -134,7 +134,7 @@ The route uses no session, auth guard or database: the key is looked up through 
 
 [`sdks/`](sdks/README.md) has two dependency-free clients, each with a runnable example:
 
-- `sdks/js/bugwatcher.js`, an ES module for browsers: `init({ key, endpoint, environment, release })` reports uncaught errors and unhandled rejections, parses Chrome and Firefox stack traces, sends with `fetch` keepalive (falling back to `sendBeacon`), drops repeats of the same error within a second, and offers `captureException(error)`.
+- `sdks/js/bugwatcher.js`, an ES module for browsers: `init({ key, endpoint, environment, release, maxReports })` reports uncaught errors and unhandled rejections without getting in the way of the page's own handlers, parses Chrome and Firefox stack traces, sends with `fetch` keepalive (falling back to `sendBeacon`), drops repeats of the same error within a second, stops after `maxReports` reports per page load (unlimited by default), and offers `captureException(error)`.
 - `sdks/php/BugWatcher.php`, one class for any PHP app: `register()` reports uncaught exceptions and fatal errors with source context, and `captureException($e)` reports handled ones. It leaves the POST body out unless asked, times out after one second and never throws. The SDK README shows how to use it from Laravel.
 
 ### Masking

@@ -4,17 +4,26 @@ Two small clients that send errors to `POST /api/v1/ping`. Both are single files
 
 ## JavaScript (browser)
 
-`js/bugwatcher.js` is an ES module.
+`js/bugwatcher.js` is an ES module. Setting it up in an app takes one import and one call:
 
 ```js
-import { init, captureException, setUser } from './bugwatcher.js';
+import { init } from './bugwatcher.js';
 
-init({
-  key: 'bwp_pk_...',                                   // the project's public key
-  endpoint: 'https://bugwatcher-pings-api.onrender.com/api/v1/ping',
-  environment: 'production',                           // production, staging or development
-  release: '1.4.0',                                    // optional
-});
+init({ key: 'bwp_pk_...', endpoint: 'https://bugwatcher-pings-api.onrender.com/api/v1/ping', environment: 'production', maxReports: 20 });
+```
+
+| Option | Default | What |
+|---|---|---|
+| `key` | required | The project's public key (`bwp_pk_...`). Without it `init` does nothing |
+| `endpoint` | required | The ping URL, `https://<api host>/api/v1/ping` |
+| `environment` | `'production'` | `production`, `staging` or `development` |
+| `release` | none | Your version string, for example `'1.4.0'` |
+| `maxReports` | unlimited | The most reports sent per page load, counting uncaught errors, unhandled rejections and `captureException` calls together. It caps send attempts, so a send that fails still counts; repeats dropped by the one-second dedupe don't. After the cap the SDK quietly stops sending and the page's own error handlers run as before. Anything other than a positive integer means unlimited |
+
+The other calls:
+
+```js
+import { captureException, setUser } from './bugwatcher.js';
 
 setUser({ id: 42 });                                   // optional; only the id is sent
 
@@ -25,9 +34,11 @@ try {
 }
 ```
 
-After `init`, uncaught errors (`window.onerror`) and unhandled promise rejections are reported automatically. Stack traces from Chrome, Edge, Firefox and Safari are parsed into frames. Identical errors within one second are sent once. Reports go out with `fetch` and `keepalive`, so they survive a page unload; if `fetch` fails, the SDK falls back to `navigator.sendBeacon`, with the key in the body because a beacon can't set headers.
+After `init`, uncaught errors and unhandled promise rejections are reported automatically. The SDK listens with `addEventListener` and only observes: it never assigns `window.onerror`, cancels an event or stops it propagating, so the app's own handlers keep working. Stack traces from Chrome, Edge, Firefox and Safari are parsed into frames. Identical errors within one second are sent once. Reports go out with `fetch` and `keepalive`, so they survive a page unload; if `fetch` fails, the SDK falls back to `navigator.sendBeacon`, with the key in the body because a beacon can't set headers.
 
 Example: serve the `js` folder (for example `python -m http.server 5591` inside `sdks/js`) and open `http://127.0.0.1:5591/example.html?key=bwp_pk_...&endpoint=http://127.0.0.1:8473/api/v1/ping`.
+
+Tests: `node --test sdks/js/bugwatcher.test.mjs` from the repository root (Node 20 or newer, nothing to install).
 
 ## PHP
 
