@@ -4,8 +4,8 @@ namespace App\Events;
 
 use App\Models\ErrorEvent;
 use App\Models\Issue;
-use App\Models\Project;
 use App\Realtime\FeedItem;
+use App\Webhooks\EndpointCache;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
@@ -32,7 +32,8 @@ class PingProcessed implements ShouldBroadcastNow
 
     public function broadcastOn(): PrivateChannel
     {
-        return new PrivateChannel('project.'.Project::whereKey($this->event->project_id)->value('slug'));
+        // The cached slug saves a database round trip on every ping; the alert listener reads the same entry.
+        return new PrivateChannel('project.'.app(EndpointCache::class)->forProject((int) $this->event->project_id)['slug']);
     }
 
     public function broadcastAs(): string

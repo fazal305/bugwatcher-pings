@@ -11,6 +11,7 @@ use App\Pings\PingProcessor;
 use App\Pings\PingSpool;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -168,6 +169,56 @@ class ProcessPingTest extends TestCase
         $this->assertSame(1, ErrorEvent::count());
         $this->assertSame(1, Issue::sole()->event_count);
         Event::assertDispatchedTimes(PingProcessed::class, 1);
+    }
+
+    public function test_only_the_first_event_after_a_resolve_is_a_regression(): void
+    {
+        ProcessPing::dispatchSync($this->payload());
+        Issue::query()->update(['status' => 'resolved']);
+
+        $regression = $this->payload();
+        $next = $this->payload();
+        ProcessPing::dispatchSync($regression);
+        ProcessPing::dispatchSync($next);
+
+        $this->assertTrue(ErrorEvent::findOrFail($regression['id'])->is_regression);
+        $this->assertFalse(ErrorEvent::findOrFail($next['id'])->is_regression);
+        $this->assertSame('open', Issue::sole()->status);
+        $this->assertSame(3, Issue::sole()->event_count);
+    }
+
+    public function test_a_late_ping_is_counted_without_moving_last_seen_back(): void
+    {
+        ProcessPing::dispatchSync($this->payload(['received_at' => 1760000009000]));
+        ProcessPing::dispatchSync($this->payload(['received_at' => 1760000001000, 'level' => 'warning', 'environment' => 'staging']));
+
+        $issue = Issue::sole();
+        $this->assertSame(2, $issue->event_count);
+        $this->assertSame('2025-10-09 08:53:29.000', $issue->first_seen_at->format('Y-m-d H:i:s.v'));
+        $this->assertSame('2025-10-09 08:53:29.000', $issue->last_seen_at->format('Y-m-d H:i:s.v'));
+        $this->assertSame('warning', $issue->level);
+        $this->assertSame('staging', $issue->environment);
+    }
+
+    public function test_on_postgres_a_processed_ping_costs_one_database_statement(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('The single-statement path is PostgreSQL only.');
+        }
+        // Warms the cached project slug the broadcast uses.
+        ProcessPing::dispatchSync($this->payload());
+
+        $statements = 0;
+        DB::listen(function () use (&$statements) {
+            $statements++;
+        });
+        ProcessPing::dispatchSync($this->payload());
+        $this->assertSame(1, $statements, 'A ping for an existing issue');
+
+        ProcessPing::dispatchSync($this->payload(['exception' => ['type' => 'RangeError', 'frames' => $this->payload()['exception']['frames']]]));
+        $this->assertSame(2, $statements, 'A ping for a new issue');
+
+        $this->assertSame([2, 1], Issue::orderBy('id')->pluck('event_count')->all());
     }
 
     public function test_when_the_database_is_down_the_payload_goes_to_the_spool(): void

@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Str;
 use Pdo\Mysql;
+use Pdo\Pgsql;
 
 return [
 
@@ -97,6 +98,9 @@ return [
             'prefix_indexes' => true,
             'search_path' => env('DB_SEARCH_PATH', 'public'),
             'sslmode' => env('DB_SSLMODE', 'prefer'),
+            // Server-side prepared statements cost a prepare, an execute and a DEALLOCATE round trip per query;
+            // with this each query is one round trip, still with its parameters sent separately from the SQL.
+            'options' => extension_loaded('pdo_pgsql') ? [(PHP_VERSION_ID >= 80500 ? Pgsql::ATTR_DISABLE_PREPARES : PDO::PGSQL_ATTR_DISABLE_PREPARES) => true] : [],
         ],
 
         'sqlsrv' => [
