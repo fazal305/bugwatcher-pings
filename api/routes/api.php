@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\BroadcastAuthController;
 use App\Http\Controllers\Api\CronController;
 use App\Http\Controllers\Api\EventController;
+use App\Http\Controllers\Api\InvitationController;
 use App\Http\Controllers\Api\IssueController;
 use App\Http\Controllers\Api\MemberController;
 use App\Http\Controllers\Api\PingController;
@@ -29,6 +30,9 @@ Route::post('/auth/register', [AuthController::class, 'register'])->middleware('
 Route::post('/auth/login', [AuthController::class, 'login'])->middleware('throttle:login');
 Route::post('/auth/demo', [AuthController::class, 'demo'])->middleware('throttle:demo');
 
+// Public: the token in the link is the secret. Any bad, expired or used token gets the same 404.
+Route::get('/invitations/{token}', [InvitationController::class, 'show'])->middleware('throttle:invitation-lookup');
+
 // Authenticated by the realtime JWT alone, not by Sanctum.
 Route::post('/broadcasting/auth', BroadcastAuthController::class)->middleware('throttle:realtime');
 
@@ -36,6 +40,7 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/auth/logout', [AuthController::class, 'logout']);
     Route::post('/realtime/token', RealtimeTokenController::class);
+    Route::post('/invitations/{token}/accept', [InvitationController::class, 'accept'])->middleware('throttle:invitation-accept');
 
     Route::get('/projects', [ProjectController::class, 'index']);
     Route::post('/projects', [ProjectController::class, 'store']);
@@ -47,9 +52,12 @@ Route::middleware(['auth:sanctum', 'throttle:api'])->group(function () {
         Route::post('/rotate-key', [ProjectController::class, 'rotateKey'])->can('manageAccess', 'project');
 
         Route::get('/members', [MemberController::class, 'index'])->can('view', 'project');
-        Route::post('/members', [MemberController::class, 'store'])->can('manageAccess', 'project');
         Route::patch('/members/{member}', [MemberController::class, 'update'])->can('manageAccess', 'project')->whereNumber('member');
         Route::delete('/members/{member}', [MemberController::class, 'destroy'])->can('manageAccess', 'project')->whereNumber('member');
+
+        Route::get('/invitations', [InvitationController::class, 'index'])->can('manageAccess', 'project');
+        Route::post('/invitations', [InvitationController::class, 'store'])->can('manageAccess', 'project')->middleware('throttle:invitations');
+        Route::delete('/invitations/{invitation}', [InvitationController::class, 'destroy'])->can('manageAccess', 'project')->whereNumber('invitation');
 
         Route::get('/events', [EventController::class, 'index'])->can('view', 'project');
         Route::get('/events/{event}', [EventController::class, 'show'])->can('view', 'project')->where('event', '[0-9A-Za-z]{26}');

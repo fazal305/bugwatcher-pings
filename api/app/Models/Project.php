@@ -55,6 +55,12 @@ class Project extends Model
         return $this->hasMany(ProjectMember::class);
     }
 
+    /** @return HasMany<ProjectInvitation, $this> */
+    public function invitations(): HasMany
+    {
+        return $this->hasMany(ProjectInvitation::class);
+    }
+
     /** @return HasMany<ErrorEvent, $this> */
     public function events(): HasMany
     {

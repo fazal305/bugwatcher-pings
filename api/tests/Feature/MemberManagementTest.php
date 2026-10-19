@@ -29,26 +29,6 @@ class MemberManagementTest extends TestCase
         return "/api/projects/{$this->project->slug}/members{$path}";
     }
 
-    public function test_adding_a_member_gives_the_same_reply_whether_or_not_the_account_exists(): void
-    {
-        $dev = User::factory()->create(['email' => 'dev@example.com']);
-        Sanctum::actingAs($this->admin);
-
-        $existing = $this->postJson($this->url(), ['email' => 'DEV@example.com', 'role' => 'developer'])->assertStatus(202)->json();
-        $unknown = $this->postJson($this->url(), ['email' => 'ghost@example.com', 'role' => 'developer'])->assertStatus(202)->json();
-
-        $this->assertSame($existing, $unknown);
-        $this->assertDatabaseHas('project_members', ['project_id' => $this->project->id, 'user_id' => $dev->id, 'role' => 'developer']);
-        $this->assertDatabaseCount('project_members', 2);
-    }
-
-    public function test_add_member_is_validated(): void
-    {
-        Sanctum::actingAs($this->admin);
-
-        $this->postJson($this->url(), ['email' => 'nope', 'role' => 'owner'])->assertJsonValidationErrors(['email', 'role']);
-    }
-
     public function test_only_admins_see_member_emails(): void
     {
         $dev = User::factory()->create(['name' => 'Dev', 'email' => 'dev@example.com']);
@@ -132,7 +112,7 @@ class MemberManagementTest extends TestCase
         $this->getJson("/api/projects/{$intruderProject->slug}")->assertOk();
         $this->getJson("/api/projects/{$this->project->slug}")->assertNotFound();
         $this->getJson($this->url())->assertNotFound();
-        $this->postJson($this->url(), ['email' => $intruder->email, 'role' => 'admin'])->assertNotFound();
+        $this->postJson("/api/projects/{$this->project->slug}/invitations", ['email' => $intruder->email, 'role' => 'admin'])->assertNotFound();
 
         $this->assertDatabaseMissing('project_members', ['project_id' => $this->project->id, 'user_id' => $intruder->id]);
     }

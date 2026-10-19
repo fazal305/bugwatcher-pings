@@ -29,6 +29,10 @@ export default function Privacy() {
           <strong>Alert settings and deliveries:</strong> the Slack, Discord or webhook URLs you add (encrypted in the database), their
           filters, and a log of each alert sent: when, whether it worked and the HTTP status. The log never holds the receiver&apos;s reply.
         </li>
+        <li>
+          <strong>Invitations:</strong> the email address and role a project admin invites someone with, who sent the invitation, and when
+          it expires or was accepted. Invitations are deleted when they are revoked or the project is deleted.
+        </li>
       </ul>
       <p>We use this data only to run BugWatcher Pings for you and your project members. We do not sell it or use it for advertising.</p>
 

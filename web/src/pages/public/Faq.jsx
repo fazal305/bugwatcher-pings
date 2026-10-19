@@ -71,7 +71,7 @@ const QUESTIONS = [
           errors start with <code>[Test]</code>, and you can send five a minute.
         </p>
         <p>
-          Because everyone shares it, the demo can&apos;t add or remove members, rotate the project key or set up alerts. It is reset to its
+          Because everyone shares it, the demo can&apos;t invite or remove members, rotate the project key or set up alerts. It is reset to its
           sample data once a day. Create a free account to try those parts with your own project.
         </p>
       </>

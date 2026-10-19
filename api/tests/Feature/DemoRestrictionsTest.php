@@ -28,16 +28,15 @@ class DemoRestrictionsTest extends TestCase
         $this->project = Project::where('name', DemoSeeder::PROJECT_NAME)->sole();
     }
 
-    public function test_the_demo_account_cannot_add_members(): void
+    public function test_the_demo_account_cannot_invite_members(): void
     {
-        $visitor = User::factory()->create(['email' => 'visitor@example.com']);
         Sanctum::actingAs($this->demo);
 
-        $this->postJson("/api/projects/{$this->project->slug}/members", ['email' => 'visitor@example.com', 'role' => 'admin'])
+        $this->postJson("/api/projects/{$this->project->slug}/invitations", ['email' => 'visitor@example.com', 'role' => 'admin'])
             ->assertForbidden()
             ->assertJsonPath('message', self::MESSAGE);
 
-        $this->assertDatabaseMissing('project_members', ['user_id' => $visitor->id]);
+        $this->assertDatabaseCount('project_invitations', 0);
     }
 
     public function test_the_demo_account_cannot_change_or_remove_members(): void
@@ -79,6 +78,6 @@ class DemoRestrictionsTest extends TestCase
         Sanctum::actingAs($admin);
 
         $this->postJson("/api/projects/{$project->slug}/rotate-key")->assertOk();
-        $this->postJson("/api/projects/{$project->slug}/members", ['email' => 'someone@example.com', 'role' => 'developer'])->assertStatus(202);
+        $this->postJson("/api/projects/{$project->slug}/invitations", ['email' => 'someone@example.com', 'role' => 'developer'])->assertCreated();
     }
 }

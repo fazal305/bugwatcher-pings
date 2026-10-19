@@ -54,14 +54,20 @@ Working so far:
 | `PATCH /api/projects/{slug}` | admins | Rename (the slug stays the same) |
 | `POST /api/projects/{slug}/rotate-key` | admins | Issues a new public key; the old one stops working |
 | `GET /api/projects/{slug}/members` | members | Only admins see members' email addresses |
-| `POST /api/projects/{slug}/members` | admins | `email`, `role`. Always answers 202 with the same message, whether or not the account exists |
 | `PATCH`, `DELETE /api/projects/{slug}/members/{id}` | admins | Change a role or remove a member. A project always keeps at least one admin |
+| `POST /api/projects/{slug}/invitations` | admins | `email`, `role`. Always `201` with `invitation` (`id`, `email`, `role`, `expires_at`) and `invite_url`, whether the email is unknown, has an account or is already a member; accounts are never looked up. Re-inviting an email replaces its pending invitation. 5 a minute and 20 an hour per user |
+| `GET /api/projects/{slug}/invitations` | admins | Pending, unexpired invitations: `id`, `email`, `role`, `expires_at`, `invited_by` (name) |
+| `DELETE /api/projects/{slug}/invitations/{id}` | admins | Revoke; the link stops working |
+| `GET /api/invitations/{token}` | anyone | `project_name`, `role`, `expires_at` only (not the email, since links get forwarded). Any unknown, expired, revoked or used link gets the same `404` "This invitation link is invalid or has expired." 30 a minute per IP |
+| `POST /api/invitations/{token}/accept` | signed in | Joins the project (someone already in it keeps their role) and uses up the link; answers `project` (`slug`, `name`). `403` if your email isn't the invited one or you're the demo account; the same `404` as above for a bad link. 10 a minute per user |
 
-Authorization is handled by `ProjectPolicy`, run as route middleware before validation. Someone who isn't a member gets the same `404 Not Found.` as for a project that doesn't exist, so slugs can't be probed; a developer trying an admin action gets `403`. Member ids are scoped to the project in the URL.
+Authorization is handled by `ProjectPolicy`, run as route middleware before validation. Someone who isn't a member gets the same `404 Not Found.` as for a project that doesn't exist, so slugs can't be probed; a developer trying an admin action gets `403`. Member and invitation ids are scoped to the project in the URL.
+
+People join a project through an invitation link, never by being added directly, so an admin can't use the members screen to find out which email addresses have accounts. The link (`FRONTEND_URL/invite/<token>`) is shown once, to the admin who created it, who sends it to the person themselves: no email is sent. Only a SHA-256 hash of the 48-character token is stored. A link works once and expires after 7 days.
 
 Sign-in, sign-up and the demo are rate limited per IP address and (for sign-in and sign-up) per email address; over the limit the API answers `429` with a short message that the web app shows.
 
-Run `php artisan db:seed` to create the demo account ("Demo") and its project, "Demo Storefront (sample data)", with sample errors (see [The demo](#the-demo)). The seeder is safe to run again. The demo account is shared by everyone who uses it, and the app says so while you're in it. Because of that it can't add, change or remove members or rotate keys (`403` with a short explanation), and the dashboard hides those controls for it.
+Run `php artisan db:seed` to create the demo account ("Demo") and its project, "Demo Storefront (sample data)", with sample errors (see [The demo](#the-demo)). The seeder is safe to run again. The demo account is shared by everyone who uses it, and the app says so while you're in it. Because of that it can't invite, change or remove members, accept invitations, or rotate keys (`403` with a short explanation), and the dashboard hides those controls for it.
 
 ## The demo
 
@@ -521,6 +527,8 @@ For PostgreSQL in a dedicated schema of a shared database (for example a Supabas
 ## Security
 
 See [SECURITY.md](SECURITY.md) to report a vulnerability.
+
+Email addresses are not verified when an account is created, so an invitation's token, sent out of band by the admin, is what proves the invitee was meant to join. Checking that the signed-in account's email matches the invited address is an extra guard against a forwarded or leaked link, not a proof of who owns the address.
 
 ## Privacy and terms
 

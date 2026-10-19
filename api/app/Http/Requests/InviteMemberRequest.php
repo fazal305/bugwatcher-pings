@@ -6,7 +6,7 @@ use App\Enums\ProjectRole;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-class AddMemberRequest extends FormRequest
+class InviteMemberRequest extends FormRequest
 {
     protected function prepareForValidation(): void
     {

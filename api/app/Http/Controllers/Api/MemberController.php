@@ -4,12 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Enums\ProjectRole;
 use App\Http\Controllers\Controller;
-use App\Http\Requests\AddMemberRequest;
 use App\Http\Requests\UpdateMemberRequest;
 use App\Http\Resources\MemberResource;
 use App\Models\Project;
 use App\Models\ProjectMember;
-use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\DB;
@@ -28,18 +26,6 @@ class MemberController extends Controller
             ->values();
 
         return MemberResource::collection($members);
-    }
-
-    // The reply is identical whether or not the account exists, so this can't be used to look up emails.
-    public function store(AddMemberRequest $request, Project $project): JsonResponse
-    {
-        $user = User::where('email', $request->validated('email'))->first();
-
-        if ($user) {
-            $project->members()->firstOrCreate(['user_id' => $user->id], ['role' => $request->validated('role')]);
-        }
-
-        return response()->json(['message' => 'If an account with that email exists, it now has access to this project.'], 202);
     }
 
     public function update(UpdateMemberRequest $request, Project $project, ProjectMember $member): MemberResource

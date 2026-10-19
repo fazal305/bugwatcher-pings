@@ -54,6 +54,9 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    // The web app's address, used to build invitation links: the first FRONTEND_URL origin.
+    'frontend_url' => rtrim(trim(explode(',', (string) env('FRONTEND_URL', 'http://localhost:5473'))[0]), '/'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Timezone

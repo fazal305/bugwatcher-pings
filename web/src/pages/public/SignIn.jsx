@@ -43,7 +43,7 @@ export default function SignIn() {
       <h1 className="text-3xl">Sign in</h1>
       <p className="mt-2 text-muted">
         New here?{' '}
-        <Link to="/signup" className="font-semibold text-accent underline-offset-4 hover:underline">
+        <Link to="/signup" state={location.state} className="font-semibold text-accent underline-offset-4 hover:underline">
           Create an account
         </Link>
       </p>

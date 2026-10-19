@@ -67,14 +67,14 @@ class ProjectAccessTest extends TestCase
         $missing = $this->getJson('/api/projects/no-such-project')->assertNotFound()->json();
         $this->assertSame(['message' => 'Not Found.'], $missing);
 
-        foreach ([['get', ''], ['patch', ''], ['post', '/rotate-key'], ['get', '/members'], ['post', '/members']] as [$method, $path]) {
+        foreach ([['get', ''], ['patch', ''], ['post', '/rotate-key'], ['get', '/members'], ['post', '/invitations'], ['get', '/invitations']] as [$method, $path]) {
             $this->json($method, "/api/projects/{$project->slug}{$path}", ['name' => 'x', 'email' => 'a@b.co', 'role' => 'admin'])
                 ->assertNotFound()
                 ->assertExactJson($missing);
         }
 
         // Invalid input still answers 404, so validation errors can't reveal that the project exists.
-        $this->postJson("/api/projects/{$project->slug}/members", [])->assertNotFound();
+        $this->postJson("/api/projects/{$project->slug}/invitations", [])->assertNotFound();
     }
 
     public function test_developer_can_view_project_and_key_but_not_admin_actions(): void
@@ -95,7 +95,7 @@ class ProjectAccessTest extends TestCase
             ->assertForbidden()
             ->assertJsonPath('message', 'Only project admins can do that.');
         $this->postJson("/api/projects/{$project->slug}/rotate-key")->assertForbidden();
-        $this->postJson("/api/projects/{$project->slug}/members", ['email' => 'x@example.com', 'role' => 'admin'])->assertForbidden();
+        $this->postJson("/api/projects/{$project->slug}/invitations", ['email' => 'x@example.com', 'role' => 'admin'])->assertForbidden();
 
         $fresh = $project->fresh();
         $this->assertSame('Shop', $fresh->name);

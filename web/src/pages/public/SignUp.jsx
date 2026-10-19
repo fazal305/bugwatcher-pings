@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, Navigate, useNavigate } from 'react-router'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router'
 import { DemoButton } from '../../components/DemoButton'
 import { Alert, Button, Field } from '../../components/ui'
 import { useDocumentTitle } from '../../hooks/useDocumentTitle'
@@ -9,13 +9,14 @@ import { useAuth } from '../../lib/auth'
 export default function SignUp() {
   useDocumentTitle('Create an account')
   const { status, signIn } = useAuth()
+  const location = useLocation()
   const navigate = useNavigate()
   const [form, setForm] = useState({ name: '', email: '', password: '', age_confirmed: false })
   const [errors, setErrors] = useState({})
   const [message, setMessage] = useState(null)
   const [busy, setBusy] = useState(false)
 
-  if (status === 'authed') return <Navigate to="/app/projects" replace />
+  if (status === 'authed') return <Navigate to={location.state?.from || '/app/projects'} replace />
 
   const update = (e) => setForm({ ...form, [e.target.name]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
 
@@ -26,7 +27,7 @@ export default function SignUp() {
     setMessage(null)
     try {
       signIn(await api('/auth/register', { method: 'POST', body: form }))
-      navigate('/app/projects', { replace: true })
+      navigate(location.state?.from || '/app/projects', { replace: true })
     } catch (err) {
       setErrors(fieldErrors(err))
       setMessage(err.message)
@@ -39,7 +40,7 @@ export default function SignUp() {
       <h1 className="text-3xl">Create an account</h1>
       <p className="mt-2 text-muted">
         Already have one?{' '}
-        <Link to="/signin" className="font-semibold text-accent underline-offset-4 hover:underline">
+        <Link to="/signin" state={location.state} className="font-semibold text-accent underline-offset-4 hover:underline">
           Sign in
         </Link>
       </p>

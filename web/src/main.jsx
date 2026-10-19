@@ -13,6 +13,7 @@ import Terms from './pages/public/Terms'
 import Privacy from './pages/public/Privacy'
 import Cookies from './pages/public/Cookies'
 import Faq from './pages/public/Faq'
+import Invite from './pages/public/Invite'
 
 // The dashboard pages (and the realtime client they use) load on demand, so public pages stay small. Public pages are
 // bundled up front: loading them lazily made the footer jump when the text arrived.
@@ -42,6 +43,7 @@ const router = createBrowserRouter([
           { path: '/privacy', element: <Privacy /> },
           { path: '/cookies', element: <Cookies /> },
           { path: '/faq', element: <Faq /> },
+          { path: '/invite/:token', element: <Invite /> },
           { path: '*', element: <NotFound /> },
         ],
       },

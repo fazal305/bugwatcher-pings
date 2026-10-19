@@ -111,6 +111,16 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('test-error', fn (Request $request) => Limit::perMinute(5)
             ->by('test-error:'.($request->user()?->id ?: $request->ip()))->response($tooMany));
 
+        RateLimiter::for('invitations', fn (Request $request) => [
+            Limit::perMinute(5)->by('invitations:'.$request->user()?->id)->response($tooMany),
+            Limit::perHour(20)->by('invitations-hour:'.$request->user()?->id)->response($tooMany),
+        ]);
+
+        RateLimiter::for('invitation-lookup', fn (Request $request) => Limit::perMinute(30)->by('invitation-lookup:'.$request->ip())->response($tooMany));
+
+        RateLimiter::for('invitation-accept', fn (Request $request) => Limit::perMinute(10)
+            ->by('invitation-accept:'.($request->user()?->id ?: $request->ip()))->response($tooMany));
+
         RateLimiter::for('demo', fn (Request $request) => [
             Limit::perMinute(5)->by('demo-ip:'.$request->ip())->response($tooMany),
             Limit::perDay(50)->by('demo-ip-day:'.$request->ip())->response($tooMany),

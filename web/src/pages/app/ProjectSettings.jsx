@@ -13,6 +13,17 @@ const ROLES = [
 const ROLE_LABEL = { admin: 'Admin', developer: 'Developer' }
 const DEMO_NOTE = "The shared demo account can't change members or rotate keys. Create your own account to try this."
 
+// The async Clipboard API is blocked in some embedded and non-HTTPS contexts; selecting the text still lets execCommand copy it.
+async function copyWithFallback(text, element) {
+  try {
+    await navigator.clipboard.writeText(text)
+    return true
+  } catch {
+    window.getSelection()?.selectAllChildren(element)
+    return Boolean(document.execCommand?.('copy'))
+  }
+}
+
 export default function ProjectSettings() {
   const { slug } = useParams()
   const { user } = useAuth()
@@ -117,15 +128,8 @@ function KeyCard({ path, project, canRotate, demo, onChange }) {
   }, [confirming])
 
   async function copy() {
-    try {
-      await navigator.clipboard.writeText(project.public_key)
-      setCopyStatus('Copied to clipboard.')
-    } catch {
-      // The async Clipboard API is blocked in some embedded and non-HTTPS contexts; selecting the text still lets execCommand copy it.
-      window.getSelection()?.selectAllChildren(keyRef.current)
-      const copied = document.execCommand?.('copy')
-      setCopyStatus(copied ? 'Copied to clipboard.' : "Couldn't copy automatically. The key is selected, so press Ctrl+C or Cmd+C.")
-    }
+    const copied = await copyWithFallback(project.public_key, keyRef.current)
+    setCopyStatus(copied ? 'Copied to clipboard.' : "Couldn't copy automatically. The key is selected, so press Ctrl+C or Cmd+C.")
   }
 
   function cancel() {
@@ -328,7 +332,7 @@ function MembersCard({ path, isAdmin, demo, members, onChange, onReload }) {
           </li>
         ))}
       </ul>
-      {isAdmin && <AddMemberForm path={path} onAdded={onReload} />}
+      {isAdmin && <Invitations path={path} />}
     </Card>
   )
 }
@@ -352,60 +356,199 @@ function RemoveConfirm({ member, busy, onConfirm, onCancel }) {
   )
 }
 
-function AddMemberForm({ path, onAdded }) {
+const formatDate = (iso) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+
+function Invitations({ path }) {
+  const [list, setList] = useState({ loading: true, error: null, items: [] })
+  const [attempt, setAttempt] = useState(0)
   const [form, setForm] = useState({ email: '', role: 'developer' })
   const [errors, setErrors] = useState({})
-  const [status, setStatus] = useState(null)
+  const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [created, setCreated] = useState(null)
+  const [copyStatus, setCopyStatus] = useState('')
+  const [revoking, setRevoking] = useState(null)
+  const [busyId, setBusyId] = useState(null)
+  const linkRef = useRef(null)
+  const copyRef = useRef(null)
+
+  useEffect(() => {
+    let active = true
+    api(`${path}/invitations`)
+      .then(({ data }) => active && setList({ loading: false, error: null, items: data }))
+      .catch((err) => active && setList({ loading: false, error: err.message, items: [] }))
+    return () => {
+      active = false
+    }
+  }, [path, attempt])
+
+  useEffect(() => {
+    if (created) copyRef.current?.focus()
+  }, [created])
+
+  const reload = () => setAttempt((n) => n + 1)
 
   async function submit(e) {
     e.preventDefault()
     setBusy(true)
     setErrors({})
-    setStatus(null)
+    setError(null)
     try {
-      const data = await api(`${path}/members`, { method: 'POST', body: form })
-      setStatus({ tone: 'success', text: data.message })
+      const data = await api(`${path}/invitations`, { method: 'POST', body: form })
+      setCreated({ email: data.invitation.email, url: data.invite_url })
+      setCopyStatus('')
       setForm({ ...form, email: '' })
-      onAdded()
+      reload()
     } catch (err) {
       setErrors(fieldErrors(err))
-      if (err.status !== 422) setStatus({ tone: 'error', text: err.message })
+      if (err.status !== 422) setError(err.message)
     } finally {
       setBusy(false)
     }
   }
 
+  async function copy() {
+    const copied = await copyWithFallback(created.url, linkRef.current)
+    setCopyStatus(copied ? 'Copied to clipboard.' : "Couldn't copy automatically. The link is selected, so press Ctrl+C or Cmd+C.")
+  }
+
+  function cancelRevoke(invitation) {
+    setRevoking(null)
+    document.getElementById(`revoke-${invitation.id}`)?.focus()
+  }
+
+  async function revoke(invitation) {
+    setBusyId(invitation.id)
+    setError(null)
+    try {
+      await api(`${path}/invitations/${invitation.id}`, { method: 'DELETE' })
+      setRevoking(null)
+      setList((l) => ({ ...l, items: l.items.filter((i) => i.id !== invitation.id) }))
+      if (created?.email === invitation.email) setCreated(null)
+      document.getElementById('invite-email')?.focus()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   return (
-    <form noValidate onSubmit={submit} className="mt-6">
-      <h3 className="text-base">Add a member</h3>
-      <p className="mt-1 text-sm text-muted">They need a BugWatcher Pings account with this email.</p>
-      <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-start">
-        <Field
-          id="member-email"
-          label="Email"
-          type="email"
-          autoComplete="off"
-          value={form.email}
-          onChange={(e) => setForm({ ...form, email: e.target.value })}
-          error={errors.email}
-        />
-        <Field id="member-role" label="Role" as="select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} error={errors.role}>
-          {ROLES.map((r) => (
-            <option key={r.value} value={r.value}>
-              {r.label}
-            </option>
-          ))}
-        </Field>
-        <Button type="submit" className="sm:mt-7" busy={busy}>
-          Add member
-        </Button>
-      </div>
-      {status && (
-        <Alert tone={status.tone} className="mt-3">
-          {status.text}
+    <div className="mt-6">
+      <form noValidate onSubmit={submit}>
+        <h3 className="text-base">Invite a member</h3>
+        <p className="mt-1 text-sm text-muted">You&apos;ll get a link to send them. They join by opening it while signed in with this email address.</p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem_auto] sm:items-start">
+          <Field
+            id="invite-email"
+            label="Email"
+            type="email"
+            autoComplete="off"
+            value={form.email}
+            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            error={errors.email}
+          />
+          <Field id="invite-role" label="Role" as="select" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} error={errors.role}>
+            {ROLES.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label}
+              </option>
+            ))}
+          </Field>
+          <Button type="submit" className="sm:mt-7" busy={busy}>
+            Create invite link
+          </Button>
+        </div>
+      </form>
+
+      {error && (
+        <Alert tone="error" className="mt-3">
+          {error}
         </Alert>
       )}
-    </form>
+
+      {created && (
+        <div className="mt-4 rounded-lg border border-accent/30 bg-accent-tint p-4">
+          <p role="status" className="text-sm font-semibold text-accent-strong">
+            Invite link for {created.email}
+          </p>
+          <p className="mt-1 text-sm text-ink">Copy this link and send it to them. It works once and expires in 7 days.</p>
+          <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <code ref={linkRef} className="block min-w-0 flex-1 select-all break-all rounded-lg bg-surface px-3 py-2.5 font-mono text-sm">
+              {created.url}
+            </code>
+            <Button ref={copyRef} variant="secondary" className="shrink-0" onClick={copy} aria-label={`Copy invite link for ${created.email}`}>
+              Copy link
+            </Button>
+          </div>
+          <p role="status" className="mt-2 min-h-5 text-sm text-muted">
+            {copyStatus}
+          </p>
+        </div>
+      )}
+
+      <h3 className="mt-6 text-base">Pending invitations</h3>
+      {list.loading ? (
+        <div aria-busy="true" className="mt-3">
+          <span className="sr-only" role="status">
+            Loading invitations…
+          </span>
+          <Skeleton className="h-12" />
+        </div>
+      ) : list.error ? (
+        <div className="mt-3">
+          <ErrorState title="Couldn't load invitations" message={list.error} onRetry={reload} />
+        </div>
+      ) : list.items.length === 0 ? (
+        <p className="mt-1 text-sm text-muted">No pending invitations.</p>
+      ) : (
+        <ul className="mt-3 divide-y divide-line border-y border-line">
+          {list.items.map((invitation) => (
+            <li key={invitation.id} className="py-3">
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <div className="min-w-0">
+                  <p className="truncate font-medium">{invitation.email}</p>
+                  <p className="text-sm text-muted">
+                    {ROLE_LABEL[invitation.role]} · expires {formatDate(invitation.expires_at)}
+                    {invitation.invited_by && ` · invited by ${invitation.invited_by}`}
+                  </p>
+                </div>
+                <Button
+                  id={`revoke-${invitation.id}`}
+                  variant="ghost"
+                  aria-label={`Revoke invitation for ${invitation.email}`}
+                  onClick={() => setRevoking(invitation.id)}
+                  disabled={busyId === invitation.id}
+                >
+                  Revoke
+                </Button>
+              </div>
+              {revoking === invitation.id && (
+                <RevokeConfirm invitation={invitation} busy={busyId === invitation.id} onConfirm={() => revoke(invitation)} onCancel={() => cancelRevoke(invitation)} />
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+function RevokeConfirm({ invitation, busy, onConfirm, onCancel }) {
+  const cancelRef = useRef(null)
+  useEffect(() => cancelRef.current?.focus(), [])
+
+  return (
+    <div role="group" aria-label={`Confirm revoking the invitation for ${invitation.email}`} className="mt-3 rounded-lg border border-error/30 bg-error-tint p-3">
+      <p className="text-sm text-error">Revoke this invitation? Its link will stop working.</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <Button variant="danger" busy={busy} onClick={onConfirm}>
+          Revoke
+        </Button>
+        <Button ref={cancelRef} variant="secondary" onClick={onCancel} disabled={busy}>
+          Cancel
+        </Button>
+      </div>
+    </div>
   )
 }
