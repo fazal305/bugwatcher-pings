@@ -8,6 +8,8 @@ const ARTISAN = '../api/artisan'
 // already running (for example from `npm run dev`) are reused.
 export default defineConfig({
   testDir: './e2e',
+  // These need the production build; playwright.preview.config.js runs them.
+  testIgnore: '**/*.preview.spec.js',
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,

@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, Outlet, RouterProvider } from 'react-router'
 import './index.css'
 import { AuthProvider } from './lib/auth'
+import { reloadOnce } from './lib/chunkReload'
 import PublicLayout from './layouts/PublicLayout'
 import AppLayout, { RequireAuth } from './layouts/AppLayout'
 import Landing from './pages/public/Landing'
@@ -14,6 +15,7 @@ import Privacy from './pages/public/Privacy'
 import Cookies from './pages/public/Cookies'
 import Faq from './pages/public/Faq'
 import Invite from './pages/public/Invite'
+import RouteError from './pages/RouteError'
 
 // The dashboard pages (and the realtime client they use) load on demand, so public pages stay small. Public pages are
 // bundled up front: loading them lazily made the footer jump when the text arrived.
@@ -25,6 +27,12 @@ const Projects = lazy(() => import('./pages/app/Projects'))
 const NewProject = lazy(() => import('./pages/app/NewProject'))
 const ProjectSettings = lazy(() => import('./pages/app/ProjectSettings'))
 
+// A chunk from an earlier deploy is gone: reload once to get the new build. If that's not possible, the error reaches
+// RouteError.
+window.addEventListener('vite:preloadError', (event) => {
+  if (reloadOnce()) event.preventDefault()
+})
+
 const router = createBrowserRouter([
   {
     element: (
@@ -32,6 +40,7 @@ const router = createBrowserRouter([
         <Outlet />
       </AuthProvider>
     ),
+    errorElement: <RouteError />,
     children: [
       {
         element: <PublicLayout />,
