@@ -21,4 +21,6 @@ done
 (while true; do php artisan schedule:work || true; sleep 2; done) &
 
 # Octane keeps the app booted between requests (FrankenPHP worker mode), which the ingest route's latency depends on.
-exec php artisan octane:frankenphp --host=0.0.0.0 --port="${PORT:-8080}" --admin-host=127.0.0.1 --max-requests=10000
+# OCTANE_WORKERS (default 2) caps the HTTP workers; FrankenPHP's own default is twice the host's CPU count, which can
+# exceed a small instance's memory.
+exec php artisan octane:frankenphp --host=0.0.0.0 --port="${PORT:-8080}" --admin-host=127.0.0.1 --workers="${OCTANE_WORKERS:-2}" --max-requests=10000

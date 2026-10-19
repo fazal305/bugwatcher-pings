@@ -455,6 +455,7 @@ API tests use an in-memory SQLite database by default. To run them against Postg
 | `PINGS_RETENTION_DAYS` | Events older than this are deleted by `pings:prune` (default 30) |
 | `PINGS_MAX_SPOOL_CYCLES` | How many times a ping that keeps failing goes back through the spool before it is set aside (default 10) |
 | `QUEUE_WORKERS` | Docker image only: queue workers started next to the web server (default 1) |
+| `OCTANE_WORKERS` | Docker image only: Octane HTTP workers (default 2) |
 | `DEMO_LOGIN_ENABLED` | `true` turns on `POST /api/auth/demo` (default `false`). Needs the demo account from `php artisan db:seed` or `demo:reset` |
 | `DEMO_EVENT_TTL_HOURS` | `demo:reset` keeps visitors' events in the demo project for this many hours (default 24) |
 | `PINGS_REDIS_CONNECTION` | Redis connection (from `config/database.php`) for the spool and alert cooldowns (default `default`) |
@@ -486,7 +487,7 @@ Then check that both URLs answer (the first API request may take a minute while 
 
 ### The API image
 
-`api/Dockerfile` builds a production image (FrankenPHP, PHP 8.4, OPcache, `pdo_pgsql`, `pcntl`) that listens on `$PORT` (default 8080). It sets `APP_ENV=production`, `APP_DEBUG=false` and logs to stderr; it contains no secrets, so set `APP_KEY`, the `DB_*` and Redis variables, the `PUSHER_*` variables (with `BROADCAST_CONNECTION=pusher`), `JWT_SECRET` and `FRONTEND_URL` in the host's environment. On every start, `api/docker/start.sh` caches config, routes and views, runs `php artisan migrate --force`, switches on row level security (`php artisan db:enable-rls`, see below), starts `QUEUE_WORKERS` Redis queue workers (queues `webhooks,ingest,default`) plus one more on `ingest,default`, and the scheduler, in the background (each restarted if it exits) and then the web server: Laravel Octane on FrankenPHP in worker mode, which keeps the app booted between requests. Horizon and Reverb are not run in production.
+`api/Dockerfile` builds a production image (FrankenPHP, PHP 8.4, OPcache, `pdo_pgsql`, `pcntl`) that listens on `$PORT` (default 8080). It sets `APP_ENV=production`, `APP_DEBUG=false` and logs to stderr; it contains no secrets, so set `APP_KEY`, the `DB_*` and Redis variables, the `PUSHER_*` variables (with `BROADCAST_CONNECTION=pusher`), `JWT_SECRET` and `FRONTEND_URL` in the host's environment. On every start, `api/docker/start.sh` caches config, routes and views, runs `php artisan migrate --force`, switches on row level security (`php artisan db:enable-rls`, see below), starts `QUEUE_WORKERS` Redis queue workers (queues `webhooks,ingest,default`) plus one more on `ingest,default`, and the scheduler, in the background (each restarted if it exits) and then the web server: Laravel Octane on FrankenPHP in worker mode with `OCTANE_WORKERS` workers (default 2), which keeps the app booted between requests. Horizon and Reverb are not run in production.
 
 Render's free tier has no cron and sleeps when idle, so `.github/workflows/cron.yml` calls `POST /api/cron/run` every 15 minutes. Set the repository variable `API_URL` and the secret `CRON_SECRET` (the same value as the API's `CRON_SECRET`) to switch it on.
 
