@@ -5,6 +5,7 @@ namespace App\Listeners;
 use App\Events\PingProcessed;
 use App\Jobs\SendWebhook;
 use App\Models\WebhookEndpoint;
+use App\Pings\PingTiming;
 use App\Webhooks\Alert;
 use App\Webhooks\Cooldown;
 use App\Webhooks\EndpointCache;
@@ -18,6 +19,7 @@ class QueueWebhookAlerts
 
     public function handle(PingProcessed $ping): void
     {
+        PingTiming::current()?->mark('broadcast');
         // The ping is already stored; nothing here may fail the job that stored it, or a retry would find it
         // processed and the alert would be lost for good.
         try {
@@ -25,6 +27,7 @@ class QueueWebhookAlerts
         } catch (Throwable $e) {
             Log::error('Queueing webhook alerts failed.', ['event' => $ping->event->id, 'error' => $e->getMessage()]);
         }
+        PingTiming::current()?->mark('alerts');
     }
 
     private function queue(PingProcessed $ping): void

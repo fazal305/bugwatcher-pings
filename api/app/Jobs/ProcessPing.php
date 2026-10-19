@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Listeners\QueueWebhookAlerts;
 use App\Pings\PingProcessor;
 use App\Pings\PingSpool;
+use App\Pings\PingTiming;
 use Illuminate\Broadcasting\BroadcastException;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\DetectsLostConnections;
@@ -30,24 +31,33 @@ class ProcessPing implements ShouldQueue
 
     public function handle(PingProcessor $processor, PingSpool $spool): void
     {
+        $timing = PingTiming::begin($this->payload['received_at'] ?? null);
+        $id = $this->payload['id'] ?? null;
+
         try {
             $processed = $processor->process($this->payload);
         } catch (Throwable $e) {
             if (! $this->isDatabaseUnavailable($e)) {
+                $timing?->finish($id, 'failed');
+
                 throw $e;
             }
 
             // Spooled rather than released, so an outage longer than the retry budget can't exhaust it and drop the ping.
             Log::warning('Database unavailable; ping spooled.', ['id' => $this->payload['id'] ?? null]);
             $spool->push($this->payload);
+            $timing?->finish($id, 'spooled');
 
             return;
         }
 
         if ($processed === null) {
+            $timing?->finish($id, 'duplicate');
+
             return;
         }
 
+        $timing?->mark('stored');
         try {
             event($processed);
         } catch (BroadcastException $e) {
@@ -57,6 +67,7 @@ class ProcessPing implements ShouldQueue
             // The dispatcher broadcasts before it calls listeners, so a failed broadcast skipped the alerts.
             app(QueueWebhookAlerts::class)->handle($processed);
         }
+        $timing?->finish($id, 'processed');
     }
 
     public function failed(?Throwable $e): void
