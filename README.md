@@ -6,8 +6,8 @@ BugWatcher Pings is a real-time error monitoring and alerting app. Your applicat
 
 | | URL | Status |
 |---|---|---|
-| Dashboard | https://bugwatcher-pings.vercel.app | Deploying, not verified yet |
-| API | https://bugwatcher-pings-api.onrender.com/api/health | Deploying, not verified yet |
+| Dashboard | https://bugwatcher-pings.vercel.app | Live, verified 19 October 2026 |
+| API | https://bugwatcher-pings-api.onrender.com/api/health | Live, verified 19 October 2026 |
 
 "Try the demo" signs into a shared account whose project holds labelled sample errors, and its "Fire a test error" button sends a real report through the ingest pipeline so you can watch it arrive live. The API runs on Render's free tier, which sleeps when idle: the first request after a quiet spell can take up to about 50 seconds.
 
@@ -474,7 +474,7 @@ API tests use an in-memory SQLite database by default. To run them against Postg
 
 ## Deploying
 
-Nothing below has been done yet; it is the intended setup. Use separate secrets per environment and never commit them.
+This is how the live demo is deployed. Use separate secrets per environment and never commit them.
 
 1. **Database (Supabase PostgreSQL).** Create a project, then a dedicated schema and login role for the app, as described under [Row level security](#row-level-security). Use the session pooler's host and port (IPv4) with `DB_SSLMODE=require`, `DB_SEARCH_PATH=<schema>` and the role's credentials. Migrations run when the API starts.
 2. **Redis (Upstash).** Create a Redis database and set `REDIS_URL` to its `rediss://default:<password>@<host>:6379` URL (TLS). Keep `CACHE_STORE=redis`, `QUEUE_CONNECTION=redis` and `PINGS_CACHE_STORE=redis`. Upstash only has database 0, so also set `REDIS_CACHE_DB=0` (the cache otherwise uses database 1).
