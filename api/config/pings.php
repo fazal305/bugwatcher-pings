@@ -25,7 +25,7 @@ return [
     'max_spool_cycles' => (int) env('PINGS_MAX_SPOOL_CYCLES', 10),
 
     // Logs a "ping.timing" warning with a per-step breakdown for every processed ping.
-    'timing_log' => (bool) env('PINGS_TIMING_LOG', true),
+    'timing_log' => (bool) env('PINGS_TIMING_LOG', false),
 
     'retention_days' => (int) env('PINGS_RETENTION_DAYS', 30),
 

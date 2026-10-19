@@ -311,6 +311,19 @@ Creating, changing and deleting are limited to 20 a minute per user.
 
 Both tables are covered by `php artisan db:enable-rls`, like every other table.
 
+### Measured end-to-end latency in production
+
+The target is for a new error to reach the dashboard within 1.5 s. Measured on 19 October 2026 against the live deployment: the API on Render's free tier in Singapore, PostgreSQL in Supabase's Mumbai region (through the session pooler), Redis on Upstash in Singapore and Pusher's `ap2` cluster in Mumbai. 16 pings for one issue were sent with `curl` about one every 1.8 seconds from a developer machine to the demo project, each carrying its send time in the message, while the demo's live feed was open in a browser on the same machine; a `MutationObserver` recorded when each card appeared. Both times come from the same clock.
+
+| Version | Ping sent to card shown p50 / p95 / max | Queue wait (`processed_at - received_at`) avg / max |
+|---|---|---|
+| Before: one transaction of six statements, plus a slug query for the broadcast | 1,834 / 3,930 / 3,930 ms (1,672 to 1,989 ms once the first slow jobs had cleared) | 283 / 1,656 ms |
+| After: one statement, slug from the cache | 524 / 575 / 575 ms | 4 / 6 ms |
+
+Nearly all of the old time was network round trips between Singapore and Mumbai, not database work: `pg_stat_statements` showed every statement of the job executing in under 1 ms on the server. PHP's PostgreSQL driver uses a server-side prepared statement per query by default, which costs three round trips (prepare, execute, `DEALLOCATE`); from the machine above that was 138 ms for a query against 46 ms with prepares turned off. A ping took about 23 round trips (the duplicate check, `BEGIN`, the issue lookup, the event insert, the row lock, the counter update and `COMMIT`, then the project slug for the broadcast channel). Now `PDO::PGSQL_ATTR_DISABLE_PREPARES` makes each query one round trip with its parameters still sent separately, the job's writes are a single statement, and the slug comes from the cached project entry the alert listener already reads, so the job makes one database round trip. Slow jobs also backed pings up in the queue at one a second; that wait is now gone.
+
+The remaining half second is mostly distance: the HTTPS request to Render, one round trip to Mumbai for the database, the broadcast request from Singapore to Pusher in Mumbai, and Pusher's push to the browser. This was a low rate on an otherwise idle service; it says nothing about latency under load, and a free Render service that has gone to sleep takes much longer to answer its first request.
+
 ### Measured dispatch delay
 
 The target is to start the request within 50 ms of the ping being processed. Measured on 19 October 2026 on the laptop described under [Measured throughput and latency](#measured-throughput-and-latency), but running natively on Windows rather than in the production image: `php artisan serve`, Reverb and two `php artisan queue:work` workers (one `webhooks,ingest,default`, one `ingest,default`, as in `start.sh`) on Windows PHP 8.4, PostgreSQL and Redis from `docker-compose.yml`, and a generic endpoint pointing at a PHP receiver on the same machine (`WEBHOOKS_ALLOW_PRIVATE=true`). 20 pings were sent one a second, each matching the endpoint with the cooldown off. All 20 requests arrived with a valid signature and a deep link to their event.
@@ -335,6 +348,7 @@ The web app's headers are set in `web/vercel.json`. Its Content-Security-Policy 
 
 | Target | Measured | Met? |
 |---|---|---|
+| A new error appears on the dashboard within 1.5 s | p50 524 ms, p95 575 ms in production, from the moment a ping is sent to its card appearing in the live feed (was p50 1.83 s) ([details](#measured-end-to-end-latency-in-production)) | Yes, at a low rate |
 | Ingest 5,000 pings a second | About 500 a second with workers running and 780 without, on one laptop VM shared with the load generator ([details](#measured-throughput-and-latency)) | No, not on this hardware |
 | Start each alert request within 50 ms of processing | p95 39 ms with warm workers; the first job after a worker starts took 104 to 142 ms ([details](#measured-dispatch-delay)) | With warm workers |
 | 99.99% availability | Not measured. The free hosting tiers sleep when idle and have no redundancy | No: it is a design target, not a guarantee (see the Terms) |
@@ -454,6 +468,7 @@ API tests use an in-memory SQLite database by default. To run them against Postg
 | `PINGS_QUEUE` | Queue name for pings (default `ingest`) |
 | `PINGS_RETENTION_DAYS` | Events older than this are deleted by `pings:prune` (default 30) |
 | `PINGS_MAX_SPOOL_CYCLES` | How many times a ping that keeps failing goes back through the spool before it is set aside (default 10) |
+| `PINGS_TIMING_LOG` | `true` logs a `ping.timing` warning for every processed ping: its queue wait and each database statement, Redis command and broadcast step in milliseconds (default `false`) |
 | `QUEUE_WORKERS` | Docker image only: queue workers started next to the web server (default 1) |
 | `OCTANE_WORKERS` | Docker image only: Octane HTTP workers (default 2) |
 | `DEMO_LOGIN_ENABLED` | `true` turns on `POST /api/auth/demo` (default `false`). Needs the demo account from `php artisan db:seed` or `demo:reset` |
