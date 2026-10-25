@@ -16,6 +16,8 @@ import Cookies from './pages/public/Cookies'
 import Faq from './pages/public/Faq'
 import Invite from './pages/public/Invite'
 import RouteError from './pages/RouteError'
+import { Analytics } from '@vercel/analytics/react'
+import { SpeedInsights } from '@vercel/speed-insights/react'
 
 // The dashboard pages (and the realtime client they use) load on demand, so public pages stay small. Public pages are
 // bundled up front: loading them lazily made the footer jump when the text arrived.
@@ -80,5 +82,7 @@ const router = createBrowserRouter([
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <RouterProvider router={router} />
+    <Analytics />
+    <SpeedInsights />
   </StrictMode>,
 )
